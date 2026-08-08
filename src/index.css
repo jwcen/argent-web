@@ -1,0 +1,374 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════════
+   Argent 设计系统
+   ───────────────────────────────────────────────────────────────────
+   分两层：
+   1) 语义层 —— :root / [data-theme=dark] 下的 --c-* --fs-* --sh-*，
+      是「运行时」变量，切换主题只是换掉这一层的值。
+   2) 映射层 —— @theme inline 把 Tailwind 工具类指向语义层变量。
+      用 inline 是关键：它让 bg-surface 直接编译成 var(--c-surface)，
+      而不是再包一层 Tailwind 自己的静态变量，否则主题切换不会生效。
+
+   好处：全站不需要写任何 dark: 变体，深浅两套自动跟随。
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── 浅色（默认）───────────────────────────────────────────────── */
+:root {
+  color-scheme: light;
+
+  /* 背景层次：画布 → 卡片 → 卡片内嵌块 */
+  --c-canvas: #f5f5f7;
+  --c-surface: #ffffff;
+  --c-surface-2: #f5f5f7;
+  --c-surface-3: #ebebef;
+
+  /* 文本三级 */
+  --c-ink: #1d1d1f;
+  --c-ink-soft: #6e6e73;
+  --c-ink-faint: #86868b;
+
+  /* 描边 */
+  --c-line: #d2d2d7;
+  --c-line-soft: #e8e8ed;
+
+  /* 强调色 —— 全站只有这一个，涨跌红绿只出现在数据上 */
+  --c-accent: #0071e3;
+  --c-accent-press: #0058b9;
+  --c-accent-soft: #e8f1fd;
+  --c-on-accent: #ffffff;
+
+  /* A 股语义：红涨绿跌 */
+  --c-up: #e0332f;
+  --c-down: #00a862;
+
+  /* 危险操作。数值上与 --c-up 接近，但语义不同，
+     单独成令牌 —— 否则改涨跌配色会顺手改掉删除按钮。 */
+  --c-danger: #d70015;
+
+  /* 反色沉浸段（Hero、CTA 区块） */
+  --c-inverse: #000000;
+  --c-on-inverse: #f5f5f7;
+
+  /* 阴影：浅色下靠阴影建立层级 */
+  --sh-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 12px 32px -12px rgb(0 0 0 / 0.12);
+  --sh-lift: 0 2px 4px rgb(0 0 0 / 0.05), 0 24px 56px -20px rgb(0 0 0 / 0.22);
+  --sh-pop: 0 24px 64px -12px rgb(0 0 0 / 0.28);
+
+  /* 卡片描边：浅色下几乎透明，层级主要靠阴影 */
+  --c-card-ring: rgb(0 0 0 / 0.05);
+
+  /* 玻璃层 */
+  --c-glass: rgb(255 255 255 / 0.72);
+  --c-glass-line: rgb(0 0 0 / 0.08);
+
+  /* Hero 光晕 */
+  --c-glow-a: rgb(0 113 227 / 0.20);
+  --c-glow-b: rgb(191 90 242 / 0.14);
+
+  /* 骨架屏微光 */
+  --c-shimmer: rgb(255 255 255 / 0.85);
+}
+
+/* ── 深色 ────────────────────────────────────────────────────────
+   严格按 Apple 规范：纯黑 #000 基底 + #1c1c1e 抬升层，不是深灰。
+   最关键的一点：深色下阴影几乎不可见，所以层级改用「描边 + 微光」，
+   照搬浅色的阴影会让所有卡片糊成一片。                            */
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --c-canvas: #000000;
+  --c-surface: #1c1c1e;
+  --c-surface-2: #2c2c2e;
+  --c-surface-3: #3a3a3c;
+
+  --c-ink: #f5f5f7;
+  --c-ink-soft: #a1a1a6;
+  --c-ink-faint: #8e8e93;
+
+  --c-line: #48484a;
+  --c-line-soft: #2c2c2e;
+
+  --c-accent: #0a84ff;
+  --c-accent-press: #409cff;
+  --c-accent-soft: rgb(10 132 255 / 0.16);
+  --c-on-accent: #ffffff;
+
+  --c-up: #ff453a;
+  --c-down: #30d158;
+
+  --c-danger: #ff453a;
+
+  --c-inverse: #f5f5f7;
+  --c-on-inverse: #1d1d1f;
+
+  /* 阴影退化成「几乎没有」，层级交给描边 */
+  --sh-card: 0 1px 1px rgb(0 0 0 / 0.5);
+  --sh-lift: 0 8px 32px -8px rgb(0 0 0 / 0.8);
+  --sh-pop: 0 24px 64px -12px rgb(0 0 0 / 0.9);
+
+  /* 描边在深色下承担主要的层级表达 */
+  --c-card-ring: rgb(255 255 255 / 0.10);
+
+  --c-glass: rgb(28 28 30 / 0.72);
+  --c-glass-line: rgb(255 255 255 / 0.10);
+
+  --c-glow-a: rgb(10 132 255 / 0.26);
+  --c-glow-b: rgb(191 90 242 / 0.20);
+
+  --c-shimmer: rgb(255 255 255 / 0.07);
+}
+
+/* ── 字号阶梯 ────────────────────────────────────────────────────
+   跨度 13px → 88px（约 7 倍）。Apple 页面「一眼抓住你」靠的是排版
+   落差而非颜色数量，所以强调色始终只有一个。
+   大字号用 clamp() 随视口缩放，移动端不会撑破布局。               */
+:root {
+  --fs-display: clamp(2.5rem, 9vw, 5.5rem); /* 40 → 88 Hero */
+  --fs-title-1: clamp(1.75rem, 5.2vw, 3rem); /* 28 → 48 页面主标题 */
+  --fs-title-2: clamp(1.375rem, 3.4vw, 1.75rem); /* 22 → 28 区块标题 */
+  --fs-title-3: 1.1875rem; /* 19 卡片标题 */
+  --fs-body: 1.0625rem; /* 17 正文（Apple 标准正文） */
+  --fs-caption: 0.9375rem; /* 15 次要说明 */
+  --fs-micro: 0.8125rem; /* 13 标签 */
+
+  /* 数值展示：等宽数字，随视口缩放 */
+  --fs-metric: clamp(2rem, 5.5vw, 3.25rem); /* 32 → 52 */
+
+  /* Apple 缓动曲线 */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── Tailwind 映射层 ──────────────────────────────────────────── */
+@theme inline {
+  --color-canvas: var(--c-canvas);
+  --color-surface: var(--c-surface);
+  --color-surface-2: var(--c-surface-2);
+  --color-surface-3: var(--c-surface-3);
+
+  --color-ink: var(--c-ink);
+  --color-ink-soft: var(--c-ink-soft);
+  --color-ink-faint: var(--c-ink-faint);
+
+  --color-line: var(--c-line);
+  --color-line-soft: var(--c-line-soft);
+
+  --color-accent: var(--c-accent);
+  --color-accent-press: var(--c-accent-press);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-on-accent: var(--c-on-accent);
+
+  --color-up: var(--c-up);
+  --color-down: var(--c-down);
+  --color-danger: var(--c-danger);
+
+  --color-inverse: var(--c-inverse);
+  --color-on-inverse: var(--c-on-inverse);
+
+  --color-glass: var(--c-glass);
+  --color-glass-line: var(--c-glass-line);
+  --color-card-ring: var(--c-card-ring);
+
+  --text-display: var(--fs-display);
+  --text-title-1: var(--fs-title-1);
+  --text-title-2: var(--fs-title-2);
+  --text-title-3: var(--fs-title-3);
+  --text-body: var(--fs-body);
+  --text-caption: var(--fs-caption);
+  --text-micro: var(--fs-micro);
+  --text-metric: var(--fs-metric);
+
+  --shadow-card: var(--sh-card);
+  --shadow-lift: var(--sh-lift);
+  --shadow-pop: var(--sh-pop);
+
+  --radius-card: 1.5rem;
+  --radius-tile: 1.125rem;
+  --radius-field: 0.875rem;
+
+  --ease-out-apple: var(--ease-out);
+  --ease-spring-apple: var(--ease-spring);
+}
+
+/* ── 基础 ────────────────────────────────────────────────────── */
+html {
+  /* iOS 上禁止横向橡皮筋，配合下面的 overflow-x 防止误触横滑 */
+  -webkit-text-size-adjust: 100%;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow-x: hidden;
+  background: var(--c-canvas);
+  color: var(--c-ink);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  /* 系统字体栈 = Apple 设备上即 SF Pro，最贴近官网质感且零字体请求。
+     中文回退到苹方 / 思源，不使用 Inter / Roboto 这类通用字体。 */
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+    'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC',
+    'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.011em;
+  /* 主题切换时整体过渡，避免生硬闪变 */
+  transition: background-color 0.4s var(--ease-out), color 0.4s var(--ease-out);
+}
+
+/* 大标题收紧字距，这是 Apple 排版的关键细节 —— 字号越大字距越紧 */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.028em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 键盘可达性：所有可聚焦元素都有清晰焦点环，且不影响鼠标操作 */
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+}
+
+/* 细腻滚动条，贴近 macOS 观感；移动端本就不显示 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--c-ink) 22%, transparent);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--c-ink) 38%, transparent);
+  background-clip: content-box;
+}
+
+/* ── 自定义工具类 ─────────────────────────────────────────────── */
+
+/* 安全区：iPhone 刘海/底部 Home Indicator。底部 Tab Bar 必须用，
+   否则在全面屏 iPhone 上会被系统手势条压住。 */
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+@utility mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+/* 底部 Tab Bar 高度 + 安全区，供内容区留白使用 */
+@utility pb-tabbar {
+  padding-bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
+}
+/* 底部 sheet 的内边距 + 安全区。合成一个类，避免 pb-5 与 pb-safe
+   争夺同一个 padding-bottom（谁赢取决于 CSS 顺序，很脆）。 */
+@utility pb-sheet {
+  padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+}
+
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* 等宽数字：金额、股数、百分比必须用，否则数字跳动时宽度会抖 */
+@utility tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* 液态玻璃：导航栏与浮层 */
+@utility glass {
+  background: var(--c-glass);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* 卡片描边环：深色下承担层级表达，浅色下几乎不可见 */
+@utility ring-card {
+  box-shadow: inset 0 0 0 1px var(--c-card-ring);
+}
+
+/* ── 动效 ────────────────────────────────────────────────────── */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Hero 光晕缓慢漂移，给静态页面一点呼吸感 */
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(3%, -4%, 0) scale(1.08);
+  }
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-drift {
+  animation: drift 18s var(--ease-out) infinite;
+}
+
+/* 流式输出光标 */
+.caret::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 1.05em;
+  margin-left: 0.12em;
+  vertical-align: -0.16em;
+  background: currentColor;
+  border-radius: 1px;
+  animation: pulse-soft 1.1s ease-in-out infinite;
+}
+
+/* ── 无障碍：尊重「减少动态效果」 ─────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

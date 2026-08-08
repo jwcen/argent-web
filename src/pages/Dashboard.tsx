@@ -1,0 +1,529 @@
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
+import {
+  ArrowRight,
+  ArrowUpRight,
+  ChartLineUp,
+  ChatCircle,
+  Plus,
+  Receipt,
+  Storefront,
+  Wallet,
+} from '@phosphor-icons/react'
+import { portfolio, market } from '../lib/api'
+import { useApi } from '../lib/useApi'
+import { useAuth } from '../lib/auth'
+import type { Action, Curve, Holding, MarketIndex } from '../lib/types'
+import { Card } from '../components/ui/Card'
+import { Glow } from '../components/ui/Glow'
+import { Button } from '../components/ui/Button'
+import { Skeleton } from '../components/ui/Skeleton'
+import { EmptyState } from '../components/ui/EmptyState'
+import { CountUp } from '../components/ui/CountUp'
+import { Reveal } from '../components/motion/Reveal'
+import { Donut, type Slice } from '../components/charts/Donut'
+import { AreaTrend, type TrendPoint } from '../components/charts/AreaTrend'
+import { BarSpread } from '../components/charts/BarSpread'
+import { fmtMoney, fmtNum, dateOnly, nickname } from '../lib/format'
+
+function greeting(): string {
+  const h = new Date().getHours()
+  if (h < 6) return '夜深了'
+  if (h < 12) return '早上好'
+  if (h < 18) return '下午好'
+  return '晚上好'
+}
+
+const todayLabel = () =>
+  new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
+
+// 大盘指数返回结构随数据源变化，这里做防御式读取，字段缺失也不崩。
+function readIndex(idx: MarketIndex) {
+  const v = idx as Record<string, unknown>
+  return {
+    name: String(v.name ?? v.code ?? '—'),
+    price: Number(v.price ?? NaN),
+    pct: Number(v.change_pct ?? NaN),
+  }
+}
+
+// 净值曲线下方的小指标块
+function Metric({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: string
+  tone?: 'up' | 'down'
+}) {
+  const toneCls =
+    tone === 'up' ? 'text-up' : tone === 'down' ? 'text-down' : 'text-ink'
+  return (
+    <div className="rounded-tile bg-surface-2/50 px-3 py-2">
+      <p className="text-micro text-ink-faint">{label}</p>
+      <p className={`mt-0.5 text-caption font-semibold tnum ${toneCls}`}>{value}</p>
+    </div>
+  )
+}
+
+export default function Dashboard() {
+  const { user } = useAuth()
+  const api = useApi()
+  const navigate = useNavigate()
+
+  const [holdings, setHoldings] = useState<Holding[] | null>(null)
+  const [actions, setActions] = useState<Action[] | null>(null)
+  const [indices, setIndices] = useState<MarketIndex[] | null>(null)
+  const [curve, setCurve] = useState<Curve | undefined>(undefined)
+
+  useEffect(() => {
+    void api(() => portfolio.listHoldings())
+      .then(async (list) => {
+        setHoldings(list)
+        // 没有「全部流水」端点，按持仓并发拉取后拼起来。
+        // 单个失败不能拖垮整张图，所以每个 catch 成空数组。
+        const chunks = await Promise.all(
+          list.slice(0, 20).map((h) =>
+            portfolio.listActions(h.stock_code).catch(() => [] as Action[]),
+          ),
+        )
+        setActions(chunks.flat())
+      })
+      .catch(() => {
+        setHoldings([])
+        setActions([])
+      })
+
+    // 行情依赖外部数据源，挂了就静默降级，不打断主流程
+    void api(() => market.indices())
+      .then(setIndices)
+      .catch(() => setIndices([]))
+
+    // 净值曲线（TWR）——后端按成本基线口径算，无行情时也不崩
+    void api(() => portfolio.getCurve(500))
+      .then(setCurve)
+      .catch(() => setCurve(undefined))
+  }, [api])
+
+  const totalCost = useMemo(
+    () => holdings?.reduce((s, h) => s + h.shares * h.cost_price, 0) ?? 0,
+    [holdings],
+  )
+
+  const slices = useMemo<Slice[]>(() => {
+    if (!holdings || holdings.length === 0) return []
+    const sorted = [...holdings]
+      .map((h) => ({ label: h.stock_name || h.stock_code, value: h.shares * h.cost_price }))
+      .sort((a, b) => b.value - a.value)
+    if (sorted.length <= 5) return sorted
+    const rest = sorted.slice(5).reduce((s, d) => s + d.value, 0)
+    return [...sorted.slice(0, 5), { label: '其他', value: rest }]
+  }, [holdings])
+
+  // 净值曲线：TWR（起点 100）作主区，沪深300 基准作对比线（同为 100 起点可直接比）
+  const twrPoints = useMemo<TrendPoint[]>(
+    () => (curve ? curve.dates.map((d, i) => ({ label: d, value: curve.twr[i] })) : []),
+    [curve],
+  )
+  const benchPoints = useMemo<TrendPoint[]>(
+    () => (curve && curve.bench ? curve.dates.map((d, i) => ({ label: d, value: curve.bench![i] })) : []),
+    [curve],
+  )
+
+  const flow = useMemo(() => {
+    const buy = (actions ?? [])
+      .filter((a) => a.action_type === 'BUY')
+      .reduce((s, a) => s + a.price * a.shares, 0)
+    const sell = (actions ?? [])
+      .filter((a) => a.action_type === 'SELL')
+      .reduce((s, a) => s + a.price * a.shares, 0)
+    return { buy, sell }
+  }, [actions])
+
+  const brokerCount = useMemo(
+    () => new Set((holdings ?? []).map((h) => h.broker).filter(Boolean)).size,
+    [holdings],
+  )
+
+  const loading = holdings === null
+  const empty = holdings !== null && holdings.length === 0
+  const liveIndices = (indices ?? []).map(readIndex).filter((r) => !Number.isNaN(r.price))
+
+  return (
+    <div className="space-y-6 sm:space-y-8">
+      {/* ── Hero ──────────────────────────────────────────────
+          记忆点：一个大到近乎失礼的数字浮在漂移光晕上。
+          全页只有这一处用 display 级字号，落差本身就是层级。 */}
+      <section className="relative -mx-4 sm:-mx-6 px-4 sm:px-6 pt-4 pb-8 sm:pt-8 sm:pb-12 overflow-hidden">
+        <Glow />
+        <div className="relative">
+          <p className="text-micro font-medium text-ink-faint tracking-wide">
+            {todayLabel()} · {greeting()}
+            {user ? `，${nickname(user.email)}` : ''}
+          </p>
+
+          {loading ? (
+            <Skeleton className="mt-3 h-[clamp(2rem,5.5vw,3.25rem)] w-64 rounded-2xl" />
+          ) : (
+            <h1 className="mt-2 text-metric font-semibold tnum leading-none">
+              <span className="text-[0.42em] align-top mr-1 font-normal text-ink-soft">¥</span>
+              <CountUp value={totalCost} decimals={0} />
+            </h1>
+          )}
+
+          <p className="mt-3 text-caption text-ink-soft">
+            累计投入成本 · 覆盖 {loading ? '—' : fmtNum(holdings?.length ?? 0)} 只标的
+          </p>
+
+          <dl className="mt-6 flex flex-wrap gap-x-8 gap-y-4">
+            <Stat label="流水笔数" value={actions === null ? null : actions.length} />
+            <Stat
+              label="交易日"
+              value={actions === null ? null : new Set(actions.map((a) => dateOnly(a.trade_date))).size}
+            />
+            <Stat label="关联券商" value={loading ? null : brokerCount} />
+          </dl>
+
+          <div className="mt-7 flex flex-wrap gap-3">
+            <Button icon={<Plus size={18} weight="bold" />} onClick={() => navigate('/portfolio')}>
+              记一笔交易
+            </Button>
+            <Button
+              variant="secondary"
+              icon={<ChatCircle size={18} weight="duotone" />}
+              onClick={() => navigate('/ask')}
+            >
+              问问市场
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* ── 大盘指数：拿到数据才渲染，拿不到就当它不存在 ──
+          比放一张「暂无数据」的空卡片体面得多。
+          移动端用横向 snap 滚动条，不挤压成两列小方块。 */}
+      {liveIndices.length > 0 && (
+        <Reveal>
+          <div className="-mx-4 sm:mx-0 px-4 sm:px-0 flex gap-3 overflow-x-auto no-scrollbar snap-x snap-mandatory">
+            {liveIndices.map((r, i) => {
+              const up = r.pct >= 0
+              return (
+                <div
+                  key={i}
+                  className="snap-start shrink-0 w-[46%] sm:w-auto sm:flex-1 rounded-tile bg-surface ring-card shadow-card px-4 py-3.5"
+                >
+                  <p className="text-micro text-ink-soft truncate">{r.name}</p>
+                  <p className="mt-1 text-title-3 font-semibold tnum">{fmtNum(r.price, 2)}</p>
+                  <p className={`mt-0.5 text-micro font-semibold tnum ${up ? 'text-up' : 'text-down'}`}>
+                    {Number.isNaN(r.pct) ? '—' : `${up ? '+' : ''}${r.pct.toFixed(2)}%`}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        </Reveal>
+      )}
+
+      {/* ── Bento 网格 ────────────────────────────────────────
+          ⚠️ col-span 必须加在 grid 的直接子元素上。
+          之前把它写在 Card 上、外面又包了一层 Reveal 的 motion.div，
+          于是跨列从来没生效过 —— 现在统一交给 Reveal 的 className。 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
+        {/* 组合净值曲线 TWR */}
+        <Reveal className="lg:col-span-2" delay={0.05}>
+          <Card className="h-full flex flex-col">
+            <div className="flex items-baseline justify-between gap-3 flex-wrap">
+              <div>
+                <h2 className="text-title-3 font-semibold">组合净值</h2>
+                <p className="mt-1 text-micro text-ink-faint">
+                  时间加权收益（TWR），出入金已剥离 · 与基金净值同口径
+                </p>
+              </div>
+              {curve && (
+                <div className="flex items-baseline gap-2 shrink-0">
+                  <span
+                    className={`text-title-2 font-semibold tnum ${
+                      curve.metrics.return_pct >= 0 ? 'text-up' : 'text-down'
+                    }`}
+                  >
+                    {curve.metrics.return_pct >= 0 ? '+' : ''}
+                    {curve.metrics.return_pct.toFixed(2)}%
+                  </span>
+                  <span className="text-micro text-ink-faint">区间收益</span>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-5 flex-1 flex flex-col justify-end">
+              {curve === undefined ? (
+                <Skeleton className="h-[200px] w-full rounded-tile" />
+              ) : !curve.dates || curve.dates.length < 2 ? (
+                <EmptyState
+                  compact
+                  icon={<ChartLineUp size={28} weight="duotone" />}
+                  title="暂无可绘制的净值"
+                  description={curve.note || '记录第一笔买入后这里就会出现净值曲线。'}
+                />
+              ) : (
+                <div className="w-full">
+                  <AreaTrend
+                    data={twrPoints}
+                    compare={benchPoints.length ? benchPoints : undefined}
+                    height={200}
+                  />
+                  <div className="mt-2 flex items-center justify-between text-micro text-ink-faint tnum">
+                    <span>{curve.dates[0]}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="inline-flex items-center gap-1">
+                        <span className="w-3 h-0.5 rounded-full bg-accent" /> 净值
+                      </span>
+                      {curve.bench_name && (
+                        <span className="inline-flex items-center gap-1">
+                          <span className="w-3 h-0.5 rounded-full bg-ink-faint" /> {curve.bench_name}
+                        </span>
+                      )}
+                    </div>
+                    <span>{curve.dates[curve.dates.length - 1]}</span>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <Metric
+                      label="区间收益"
+                      value={`${curve.metrics.return_pct >= 0 ? '+' : ''}${curve.metrics.return_pct.toFixed(2)}%`}
+                      tone={curve.metrics.return_pct >= 0 ? 'up' : 'down'}
+                    />
+                    <Metric label="最大回撤" value={`${curve.metrics.max_drawdown_pct.toFixed(2)}%`} />
+                    {curve.metrics.bench_return_pct !== undefined && curve.metrics.bench_return_pct !== null && (
+                      <Metric
+                        label={`${curve.bench_name ?? '基准'}收益`}
+                        value={`${curve.metrics.bench_return_pct >= 0 ? '+' : ''}${curve.metrics.bench_return_pct.toFixed(2)}%`}
+                      />
+                    )}
+                    {curve.metrics.excess_pct !== undefined && curve.metrics.excess_pct !== null && (
+                      <Metric
+                        label="超额"
+                        value={`${curve.metrics.excess_pct >= 0 ? '+' : ''}${curve.metrics.excess_pct.toFixed(2)}%`}
+                        tone={curve.metrics.excess_pct >= 0 ? 'up' : 'down'}
+                      />
+                    )}
+                  </div>
+
+                  {curve.metrics.basis === 'cost' && (
+                    <p className="mt-3 text-micro text-ink-faint leading-snug">
+                      当前为成本基线口径（无实时行情时按投入成本计），接入行情后自动升级为市值口径。
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </Card>
+        </Reveal>
+
+        {/* 持仓分布 */}
+        <Reveal delay={0.1}>
+          <Card className="h-full">
+            <h2 className="text-title-3 font-semibold">持仓分布</h2>
+            <p className="mt-1 text-micro text-ink-faint">按成本口径</p>
+
+            {loading ? (
+              <div className="mt-6 flex justify-center">
+                <Skeleton className="h-[168px] w-[168px] rounded-full" />
+              </div>
+            ) : slices.length === 0 ? (
+              <EmptyState compact title="暂无持仓" description="记录第一笔买入后这里会出现分布环。" />
+            ) : (
+              <div className="mt-5 flex flex-col items-center gap-5">
+                <div className="relative">
+                  <Donut data={slices} />
+                  <div className="absolute inset-0 grid place-items-center text-center">
+                    <div>
+                      <p className="text-title-2 font-semibold tnum leading-none">{slices.length}</p>
+                      <p className="mt-1 text-micro text-ink-faint">类</p>
+                    </div>
+                  </div>
+                </div>
+                <ul className="w-full space-y-2">
+                  {slices.map((s, i) => (
+                    <li key={s.label} className="flex items-center gap-2 text-micro">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0 bg-accent"
+                        style={{ opacity: Math.max(0.22, 1 - i * 0.18) }}
+                        aria-hidden="true"
+                      />
+                      <span className="truncate text-ink-soft">{s.label}</span>
+                      <span className="ml-auto tnum font-medium shrink-0">
+                        {totalCost > 0 ? Math.round((s.value / totalCost) * 100) : 0}%
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </Card>
+        </Reveal>
+
+        {/* 我的持仓 */}
+        <Reveal className="lg:col-span-2" delay={0.15}>
+          <Card className="h-full" padded={false}>
+            <div className="flex items-center justify-between gap-3 px-5 sm:px-6 pt-5 sm:pt-6">
+              <h2 className="text-title-3 font-semibold inline-flex items-center gap-2">
+                <Wallet size={19} weight="duotone" className="text-ink-faint" />
+                我的持仓
+              </h2>
+              <button
+                onClick={() => navigate('/portfolio')}
+                className="min-h-11 -mr-2 px-2 text-caption text-accent font-medium inline-flex items-center gap-1"
+              >
+                全部 <ArrowRight size={15} weight="bold" />
+              </button>
+            </div>
+
+            {loading ? (
+              <div className="px-5 sm:px-6 pb-5 sm:pb-6 pt-4 space-y-2">
+                <Skeleton className="h-14 rounded-tile" />
+                <Skeleton className="h-14 rounded-tile" />
+              </div>
+            ) : empty ? (
+              <div className="pb-4">
+                <EmptyState
+                  compact
+                  icon={<Wallet size={28} weight="duotone" />}
+                  title="还没有持仓"
+                  description="把第一笔买入记下来，之后的成本、分布、趋势都会自动算。"
+                  action={
+                    <Button
+                      icon={<Plus size={18} weight="bold" />}
+                      onClick={() => navigate('/portfolio')}
+                    >
+                      记一笔交易
+                    </Button>
+                  }
+                />
+              </div>
+            ) : (
+              <ul className="mt-2 px-2 sm:px-3 pb-3 sm:pb-4">
+                {(holdings ?? []).slice(0, 6).map((h) => (
+                  <li key={h.id}>
+                    <button
+                      onClick={() => navigate('/portfolio')}
+                      className="w-full min-h-[3.5rem] flex items-center justify-between gap-3 rounded-tile px-3 py-3 text-left transition-colors hover:bg-surface-2 active:bg-surface-2"
+                    >
+                      <span className="min-w-0">
+                        <span className="block font-medium truncate">
+                          {h.stock_name || h.stock_code}
+                        </span>
+                        <span className="block text-micro text-ink-faint tnum">
+                          {h.stock_code}
+                          {h.broker ? ` · ${h.broker}` : ''}
+                        </span>
+                      </span>
+                      <span className="text-right shrink-0">
+                        <span className="block font-medium tnum">
+                          ¥{fmtMoney(h.shares * h.cost_price, 0)}
+                        </span>
+                        <span className="block text-micro text-ink-faint tnum">
+                          {fmtNum(h.shares)} 股 @ {fmtMoney(h.cost_price)}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </Reveal>
+
+        {/* 资金流向 + 快捷入口 */}
+        <Reveal delay={0.2}>
+          <div className="h-full flex flex-col gap-4 sm:gap-5">
+            <Card>
+              <h2 className="text-title-3 font-semibold inline-flex items-center gap-2">
+                <Receipt size={19} weight="duotone" className="text-ink-faint" />
+                资金流向
+              </h2>
+              {actions === null ? (
+                <Skeleton className="mt-5 h-12 rounded-tile" />
+              ) : flow.buy + flow.sell === 0 ? (
+                <p className="mt-4 text-caption text-ink-soft">还没有成交记录。</p>
+              ) : (
+                <>
+                  <div className="mt-4 flex items-baseline gap-4">
+                    <div>
+                      <p className="text-micro text-ink-faint">买入</p>
+                      <p className="text-title-3 font-semibold tnum text-up">
+                        ¥{fmtMoney(flow.buy, 0)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-micro text-ink-faint">卖出</p>
+                      <p className="text-title-3 font-semibold tnum text-down">
+                        ¥{fmtMoney(flow.sell, 0)}
+                      </p>
+                    </div>
+                  </div>
+                  <BarSpread
+                    className="mt-4"
+                    segments={[
+                      { label: '买入', value: flow.buy, tone: 'up' },
+                      { label: '卖出', value: flow.sell, tone: 'down' },
+                    ]}
+                  />
+                </>
+              )}
+            </Card>
+
+            <Card className="flex-1">
+              <h2 className="text-title-3 font-semibold">快捷入口</h2>
+              <div className="mt-4 space-y-2">
+                <QuickAction
+                  icon={<Storefront size={18} weight="duotone" />}
+                  label="券商费率"
+                  onClick={() => navigate('/brokers')}
+                />
+                <QuickAction
+                  icon={<ChatCircle size={18} weight="duotone" />}
+                  label="问问市场"
+                  onClick={() => navigate('/ask')}
+                />
+              </div>
+            </Card>
+          </div>
+        </Reveal>
+      </div>
+    </div>
+  )
+}
+
+function Stat({ label, value }: { label: string; value: number | null }) {
+  return (
+    <div>
+      <dt className="text-micro text-ink-faint">{label}</dt>
+      <dd className="mt-0.5 text-title-2 font-semibold tnum leading-none">
+        {value === null ? '—' : fmtNum(value)}
+      </dd>
+    </div>
+  )
+}
+
+function QuickAction({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: ReactNode
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full min-h-12 flex items-center gap-3 rounded-tile bg-surface-2 px-4 py-3 text-left
+                 transition-[background-color,transform] duration-200 hover:bg-surface-3 active:scale-[0.99]"
+    >
+      <span className="text-accent">{icon}</span>
+      <span className="font-medium text-caption">{label}</span>
+      <ArrowUpRight size={16} className="ml-auto text-ink-faint" />
+    </button>
+  )
+}
