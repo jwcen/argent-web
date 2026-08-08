@@ -3,8 +3,9 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { CaretDown, ListPlus, Plus, Trash } from '@phosphor-icons/react'
 import { portfolio, brokers as brokerApi, ApiError } from '../lib/api'
 import { useApi } from '../lib/useApi'
+import { useQuotes } from '../lib/useQuotes'
 import { useToasts } from '../lib/toast'
-import type { Action, ActionType, Broker, DividendEvent, Holding } from '../lib/types'
+import type { Action, ActionType, Broker, DividendEvent, Holding, Quote } from '../lib/types'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input, Select } from '../components/ui/Input'
@@ -94,6 +95,21 @@ export default function Portfolio() {
     [holdings],
   )
 
+  // 实时行情：按持仓代码批量拉报价，无源时优雅降级为 {}（前端显示「暂无行情」）。
+  const holdingCodes = useMemo(() => (holdings ?? []).map((h) => h.stock_code), [holdings])
+  const quotes = useQuotes(holdingCodes)
+
+  // 市值口径汇总：有报价的用市价，没有的回落成本（绝不以假数据充市值）。
+  const totalMarketValue = useMemo(
+    () =>
+      (holdings ?? []).reduce(
+        (s, h) => s + (quotes[h.stock_code] ? quotes[h.stock_code].price * h.shares : h.shares * h.cost_price),
+        0,
+      ),
+    [holdings, quotes],
+  )
+  const hasQuote = useMemo(() => (holdings ?? []).some((h) => quotes[h.stock_code]), [holdings, quotes])
+
   const toggle = (code: string) => {
     setExpanded((cur) => {
       const next = cur === code ? null : code
@@ -153,6 +169,25 @@ export default function Portfolio() {
               </p>
             </div>
             <div>
+              <p className="text-micro text-ink-faint">{hasQuote ? '持仓市值' : '持仓市值（成本口径）'}</p>
+              <p className="mt-0.5 text-title-2 font-semibold tnum leading-none">
+                ¥{fmtMoney(totalMarketValue, 0)}
+              </p>
+            </div>
+            {hasQuote && totalCost > 0 && (
+              <div>
+                <p className="text-micro text-ink-faint">浮动盈亏</p>
+                <p
+                  className={`mt-0.5 text-title-2 font-semibold tnum leading-none ${
+                    totalMarketValue - totalCost >= 0 ? 'text-up' : 'text-down'
+                  }`}
+                >
+                  {totalMarketValue - totalCost >= 0 ? '+' : ''}¥
+                  {fmtMoney(totalMarketValue - totalCost, 0)}
+                </p>
+              </div>
+            )}
+            <div>
               <p className="text-micro text-ink-faint">标的数量</p>
               <p className="mt-0.5 text-title-2 font-semibold tnum leading-none">
                 {holdings.length}
@@ -193,6 +228,11 @@ export default function Portfolio() {
           {holdings.map((h, i) => {
             const open = expanded === h.stock_code
             const list = actions[h.stock_code]
+            const q: Quote | undefined = quotes[h.stock_code]
+            const costValue = h.shares * h.cost_price
+            const marketValue = q ? q.price * h.shares : costValue
+            const pnl = q ? marketValue - costValue : 0
+            const pnlPct = q && costValue > 0 ? (pnl / costValue) * 100 : 0
             return (
               <Reveal key={h.id} delay={Math.min(i * 0.04, 0.2)}>
                 <Card padded={false} className="overflow-hidden">
@@ -214,6 +254,7 @@ export default function Portfolio() {
                       </span>
                       <span className="mt-1 block text-micro text-ink-soft tnum">
                         {fmtNum(h.shares)} 股 · 成本 {fmtMoney(h.cost_price)}
+                        {q ? ` · 现价 ${fmtMoney(q.price)}` : ''}
                         {h.broker ? ` · ${h.broker}` : ''}
                       </span>
 
@@ -243,9 +284,24 @@ export default function Portfolio() {
                     <span className="flex items-center gap-3 shrink-0">
                       <span className="text-right">
                         <span className="block font-semibold tnum">
-                          ¥{fmtMoney(h.shares * h.cost_price, 0)}
+                          ¥{fmtMoney(marketValue, 0)}
                         </span>
-                        <span className="block text-micro text-ink-faint">市值成本</span>
+                        <span className="block text-micro text-ink-faint">
+                          {q ? '市值' : '市值成本'}
+                        </span>
+                        {q ? (
+                          <span
+                            className={`mt-0.5 block text-micro font-semibold tnum ${
+                              pnl >= 0 ? 'text-up' : 'text-down'
+                            }`}
+                          >
+                            {pnl >= 0 ? '+' : ''}¥{fmtMoney(pnl, 0)}（
+                            {pnl >= 0 ? '+' : ''}
+                            {fmtNum(pnlPct, 2)}%）
+                          </span>
+                        ) : (
+                          <span className="mt-0.5 block text-micro text-ink-faint">暂无行情</span>
+                        )}
                       </span>
                       <CaretDown
                         size={18}

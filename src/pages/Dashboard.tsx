@@ -12,8 +12,9 @@ import {
 } from '@phosphor-icons/react'
 import { portfolio, market } from '../lib/api'
 import { useApi } from '../lib/useApi'
+import { useQuotes } from '../lib/useQuotes'
 import { useAuth } from '../lib/auth'
-import type { Action, Curve, Holding, MarketIndex } from '../lib/types'
+import type { Action, Curve, Holding, MarketIndex, Quote } from '../lib/types'
 import { Card } from '../components/ui/Card'
 import { Glow } from '../components/ui/Glow'
 import { Button } from '../components/ui/Button'
@@ -111,6 +112,21 @@ export default function Dashboard() {
     [holdings],
   )
 
+  // 实时行情：按持仓代码批量报价，无源时优雅降级为 {}（不编造市值）。
+  const holdingCodes = useMemo(() => (holdings ?? []).map((h) => h.stock_code), [holdings])
+  const quotes = useQuotes(holdingCodes)
+  const totalMarketValue = useMemo(
+    () =>
+      (holdings ?? []).reduce(
+        (s, h) =>
+          s + (quotes[h.stock_code] ? quotes[h.stock_code].price * h.shares : h.shares * h.cost_price),
+        0,
+      ),
+    [holdings, quotes],
+  )
+  const hasQuote = useMemo(() => (holdings ?? []).some((h) => quotes[h.stock_code]), [holdings, quotes])
+  const totalPnL = totalMarketValue - totalCost
+
   const slices = useMemo<Slice[]>(() => {
     if (!holdings || holdings.length === 0) return []
     const sorted = [...holdings]
@@ -183,6 +199,26 @@ export default function Dashboard() {
               value={actions === null ? null : new Set(actions.map((a) => dateOnly(a.trade_date))).size}
             />
             <Stat label="关联券商" value={loading ? null : brokerCount} />
+            {hasQuote && !loading && (
+              <>
+                <div>
+                  <dt className="text-micro text-ink-faint">组合市值</dt>
+                  <dd className="mt-0.5 text-title-2 font-semibold tnum leading-none">
+                    ¥{fmtMoney(totalMarketValue, 0)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-micro text-ink-faint">浮动盈亏</dt>
+                  <dd
+                    className={`mt-0.5 text-title-2 font-semibold tnum leading-none ${
+                      totalPnL >= 0 ? 'text-up' : 'text-down'
+                    }`}
+                  >
+                    {totalPnL >= 0 ? '+' : ''}¥{fmtMoney(totalPnL, 0)}
+                  </dd>
+                </div>
+              </>
+            )}
           </dl>
 
           <div className="mt-7 flex flex-wrap gap-3">
@@ -403,7 +439,13 @@ export default function Dashboard() {
               </div>
             ) : (
               <ul className="mt-2 px-2 sm:px-3 pb-3 sm:pb-4">
-                {(holdings ?? []).slice(0, 6).map((h) => (
+                {(holdings ?? []).slice(0, 6).map((h) => {
+                  const q: Quote | undefined = quotes[h.stock_code]
+                  const costValue = h.shares * h.cost_price
+                  const mv = q ? q.price * h.shares : costValue
+                  const pnl = q ? mv - costValue : 0
+                  const pct = q && costValue > 0 ? (pnl / costValue) * 100 : 0
+                  return (
                   <li key={h.id}>
                     <button
                       onClick={() => navigate('/portfolio')}
@@ -420,15 +462,28 @@ export default function Dashboard() {
                       </span>
                       <span className="text-right shrink-0">
                         <span className="block font-medium tnum">
-                          ¥{fmtMoney(h.shares * h.cost_price, 0)}
+                          ¥{fmtMoney(mv, 0)}
                         </span>
-                        <span className="block text-micro text-ink-faint tnum">
-                          {fmtNum(h.shares)} 股 @ {fmtMoney(h.cost_price)}
-                        </span>
+                        {q ? (
+                          <span
+                            className={`block text-micro font-semibold tnum ${
+                              pnl >= 0 ? 'text-up' : 'text-down'
+                            }`}
+                          >
+                            {pnl >= 0 ? '+' : ''}¥{fmtMoney(pnl, 0)}（
+                            {pnl >= 0 ? '+' : ''}
+                            {fmtNum(pct, 2)}%）
+                          </span>
+                        ) : (
+                          <span className="block text-micro text-ink-faint tnum">
+                            {fmtNum(h.shares)} 股 @ {fmtMoney(h.cost_price)}
+                          </span>
+                        )}
                       </span>
                     </button>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             )}
           </Card>

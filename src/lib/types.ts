@@ -167,6 +167,22 @@ export interface Message {
 // 大盘指数返回结构依赖数据源，这里放宽类型以兼容不同 provider。
 export type MarketIndex = Record<string, unknown>
 
+// 实时行情报价（对齐后端 market.Quote 的 json tag）。
+// 沙箱无外网时拿不到，前端按「暂无行情」降级，绝不编造。
+export interface Quote {
+  stock_code: string
+  stock_name: string
+  price: number // 当前价
+  open: number
+  high: number
+  low: number
+  prev_close: number // 昨收
+  volume: number // 股
+  amount: number // 元
+  change_pct: number // 涨跌幅 %
+  amplitude: number // 振幅 %
+}
+
 export interface ApiErrorShape {
   detail: string
 }

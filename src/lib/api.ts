@@ -10,6 +10,7 @@ import type {
   ExternalAsset,
   Holding,
   MarketIndex,
+  Quote,
   Message,
   RealizedResult,
   Session,
@@ -202,6 +203,8 @@ export const dca = {
 export const market = {
   indices: () => get<MarketIndex[]>('/api/market/indices'),
   quote: (code: string) => get<Record<string, unknown>>(`/api/market/quote/${code}`),
+  batchQuote: (codes: string[]) =>
+    get<Quote[]>(`/api/market/quote?codes=${codes.join(',')}`),
 }
 
 // ── 问问市场 ──
