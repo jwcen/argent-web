@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CaretDown, ListPlus, Plus, Trash } from '@phosphor-icons/react'
-import { portfolio, brokers as brokerApi, ApiError } from '../lib/api'
+import { portfolio, brokers as brokerApi, accounts as accountApi, ApiError } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { useQuotes } from '../lib/useQuotes'
 import { useToasts } from '../lib/toast'
-import type { Action, ActionType, Broker, DividendEvent, Holding, Quote } from '../lib/types'
+import type { Action, ActionType, Broker, DividendEvent, Holding, Quote, Account } from '../lib/types'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input, Select } from '../components/ui/Input'
@@ -61,6 +61,8 @@ export default function Portfolio() {
 
   const [holdings, setHoldings] = useState<Holding[] | null>(null)
   const [brokers, setBrokers] = useState<Broker[]>([])
+  const [accounts, setAccounts] = useState<Account[]>([])
+  const [activeAccount, setActiveAccount] = useState<number | null>(null) // null=全部
   const [expanded, setExpanded] = useState<string | null>(null)
   const [actions, setActions] = useState<Record<string, Action[]>>({})
   const [loadingCode, setLoadingCode] = useState<string | null>(null)
@@ -70,15 +72,22 @@ export default function Portfolio() {
   const [pendingDelete, setPendingDelete] = useState<{ code: string; action: Action } | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // 账户管理
+  const [accountModalOpen, setAccountModalOpen] = useState(false)
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null)
+
   const load = () => {
-    void api(() => portfolio.listHoldings())
+    void api(() => portfolio.listHoldings(activeAccount))
       .then(setHoldings)
       .catch(() => setHoldings([]))
     void api(() => brokerApi.list())
       .then(setBrokers)
       .catch(() => setBrokers([]))
+    void api(() => accountApi.list())
+      .then(setAccounts)
+      .catch(() => setAccounts([]))
   }
-  useEffect(load, [api])
+  useEffect(load, [api, activeAccount])
 
   const totalCost = useMemo(
     () => (holdings ?? []).reduce((s, h) => s + h.shares * h.cost_price, 0),
@@ -157,6 +166,41 @@ export default function Portfolio() {
           </Button>
         }
       />
+
+      {/* 账户 Tab 栏：全部 / 各自定义账户 */}
+      {accounts.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          <button
+            onClick={() => setActiveAccount(null)}
+            className={`shrink-0 px-4 py-2 rounded-full text-caption font-medium transition-colors ${
+              activeAccount === null
+                ? 'bg-accent text-white'
+                : 'bg-surface-2 text-ink-soft hover:bg-surface-2/80'
+            }`}
+          >
+            全部
+          </button>
+          {accounts.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => setActiveAccount(a.id)}
+              className={`shrink-0 px-4 py-2 rounded-full text-caption font-medium transition-colors ${
+                activeAccount === a.id
+                  ? 'bg-accent text-white'
+                  : 'bg-surface-2 text-ink-soft hover:bg-surface-2/80'
+              }`}
+            >
+              {a.name}
+            </button>
+          ))}
+          <button
+            onClick={() => { setEditingAccount(null); setAccountModalOpen(true) }}
+            className="shrink-0 min-h-9 px-3 py-2 rounded-full text-caption font-medium text-accent border border-dashed border-line hover:border-accent/50 transition-colors"
+          >
+            + 新建账户
+          </button>
+        </div>
+      )}
 
       {/* 汇总条：移动端也能一眼看到总量，不用往回滚 */}
       {holdings && holdings.length > 0 && (
@@ -367,6 +411,7 @@ export default function Portfolio() {
       <AddActionModal
         open={modalOpen}
         brokers={brokers}
+        accounts={accounts}
         presetCode={presetCode}
         onClose={() => setModalOpen(false)}
         onSaved={() => {
@@ -391,6 +436,16 @@ export default function Portfolio() {
         }
         onCancel={() => setPendingDelete(null)}
         onConfirm={confirmDelete}
+      />
+
+      <AccountModal
+        open={accountModalOpen}
+        account={editingAccount}
+        onClose={() => setAccountModalOpen(false)}
+        onSaved={() => {
+          setAccountModalOpen(false)
+          load()
+        }}
       />
     </div>
   )
@@ -607,12 +662,14 @@ function DividendPanel({
 function AddActionModal({
   open,
   brokers,
+  accounts,
   presetCode,
   onClose,
   onSaved,
 }: {
   open: boolean
   brokers: Broker[]
+  accounts: Account[]
   presetCode: string
   onClose: () => void
   onSaved: () => void
@@ -624,6 +681,7 @@ function AddActionModal({
   const [shares, setShares] = useState('')
   const [date, setDate] = useState(today())
   const [broker, setBroker] = useState('')
+  const [accountId, setAccountId] = useState<string>('')
   const [note, setNote] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [formError, setFormError] = useState('')
@@ -637,6 +695,7 @@ function AddActionModal({
     setShares('')
     setDate(today())
     setBroker(brokers.find((b) => b.is_default)?.name || '')
+    setAccountId('')
     setNote('')
     setErrors({})
     setFormError('')
@@ -674,6 +733,7 @@ function AddActionModal({
           shares: sh,
           trade_date: date,
           broker: broker || undefined,
+          account_id: accountId ? parseInt(accountId, 10) : undefined,
           note: note || undefined,
         }),
       )
@@ -776,6 +836,22 @@ function AddActionModal({
           ))}
         </Select>
 
+        {accounts.length > 0 && (
+          <Select
+            label="归属账户"
+            name="account_id"
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+          >
+            <option value="">不指定（未归类）</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={String(a.id)}>
+                {a.name}
+              </option>
+            ))}
+          </Select>
+        )}
+
         <Input
           label="备注（可选）"
           name="note"
@@ -794,6 +870,121 @@ function AddActionModal({
           <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
             取消
           </Button>
+          <Button type="submit" loading={busy} className="flex-1">
+            保存
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+/**
+ * 账户管理弹窗：新建或编辑自定义账户分组。
+ */
+function AccountModal({
+  open,
+  account,
+  onClose,
+  onSaved,
+}: {
+  open: boolean
+  account: Account | null // null=新建
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const api = useApi()
+  const toast = useToasts()
+  const [name, setName] = useState('')
+  const [kind, setKind] = useState<string>('custom')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    if (account) {
+      setName(account.name)
+      setKind(account.kind)
+    } else {
+      setName('')
+      setKind('custom')
+    }
+  }, [open, account])
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) return
+    setBusy(true)
+    try {
+      if (account) {
+        await api(() => accountApi.update(account.id, { name: name.trim(), kind }))
+      } else {
+        await api(() => accountApi.create({ name: name.trim(), kind }))
+      }
+      onSaved()
+      toast.success(account ? '账户已更新' : '账户已创建')
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : '保存失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!account) return
+    if (!confirm(`确定删除「${account.name}」？关联持仓会变为未归类。`)) return
+    setBusy(true)
+    try {
+      await api(() => accountApi.remove(account.id))
+      onSaved()
+      toast.success('账户已删除')
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : '删除失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={account ? '编辑账户' : '新建账户'}>
+      <form onSubmit={submit} className="space-y-4" noValidate>
+        <Input
+          label="账户名称"
+          name="name"
+          placeholder="如 华泰证券、支付宝、天天基金"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+
+        <div>
+          <span className="block text-micro font-medium text-ink-soft mb-1.5">账户类型</span>
+          <div className="grid grid-cols-4 gap-2">
+            {(['stock', 'fund', 'bank', 'custom'] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={kind === k}
+                onClick={() => setKind(k)}
+                className={`min-h-11 rounded-field text-caption font-medium border transition-colors ${
+                  kind === k
+                    ? 'border-accent bg-accent-soft text-accent'
+                    : 'border-line text-ink-soft hover:bg-surface-2'
+                }`}
+              >
+                {k === 'stock' ? 'A股' : k === 'fund' ? '基金' : k === 'bank' ? '银行' : '其他'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-1">
+          <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
+            取消
+          </Button>
+          {account && (
+            <Button type="button" variant="danger" onClick={handleDelete} className="flex-1">
+              删除
+            </Button>
+          )}
           <Button type="submit" loading={busy} className="flex-1">
             保存
           </Button>

@@ -2,6 +2,8 @@ import type {
   Action,
   ActionType,
   AssetType,
+  Account,
+  AccountSummary,
   Broker,
   Curve,
   DCASchedule,
@@ -82,9 +84,13 @@ export interface CreateActionInput {
   trade_time?: string
   fee?: number | null
   broker?: string
+  account_id?: number | null
 }
 export const portfolio = {
-  listHoldings: () => get<Holding[]>('/api/portfolio'),
+  listHoldings: (accountId?: number | null) =>
+    accountId != null
+      ? get<Holding[]>(`/api/portfolio?account_id=${accountId}`)
+      : get<Holding[]>('/api/portfolio'),
   realized: () => get<RealizedResult[]>('/api/portfolio/realized'),
   listActions: (code: string) => get<Action[]>(`/api/portfolio/${code}/actions`),
   createAction: (code: string, body: CreateActionInput) =>
@@ -137,6 +143,21 @@ export const brokers = {
   create: (b: BrokerInput) => post<{ id: number }>('/api/brokers', b),
   update: (id: number, b: BrokerInput) => put<{ ok: boolean }>(`/api/brokers/${id}`, b),
   remove: (id: number) => del<{ ok: boolean }>(`/api/brokers/${id}`),
+}
+
+// ── 账户分组 ──
+export interface AccountInput {
+  name: string
+  kind?: string // 'stock' | 'fund' | 'bank' | 'custom'
+  color?: string
+  sort_order?: number
+}
+export const accounts = {
+  list: () => get<Account[]>('/api/accounts'),
+  create: (a: AccountInput) => post<{ id: number }>('/api/accounts', a),
+  update: (id: number, a: AccountInput) => put<{ ok: boolean }>(`/api/accounts/${id}`, a),
+  remove: (id: number) => del<{ ok: boolean }>(`/api/accounts/${id}`),
+  summaries: () => get<AccountSummary[]>('/api/accounts/summaries'),
 }
 
 // ── 场外资産 ──

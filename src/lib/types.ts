@@ -15,6 +15,7 @@ export interface Holding {
   cost_price: number
   purchase_date: string
   broker: string
+  account_id?: number | null // 归属账户（null=未归类）
   created_at: string
   updated_at: string
 
@@ -59,6 +60,7 @@ export interface Action {
   trade_time?: string
   fee?: number | null
   broker?: string
+  account_id?: number | null // 归属账户（null=未归类）
   created_at: string
 }
 
@@ -70,6 +72,27 @@ export interface Broker {
   etf_rate: number
   etf_min: number
   is_default: boolean
+}
+
+export type AccountKind = 'stock' | 'fund' | 'bank' | 'custom'
+
+/** 用户自定义的投资账户分组（如「华泰证券」「支付宝」「天天基金」） */
+export interface Account {
+  id: number
+  name: string
+  kind: AccountKind
+  color?: string // 可选颜色标签
+  sort_order: number
+  created_at: string
+}
+
+/** 单个账户的持仓汇总快照 */
+export interface AccountSummary {
+  account_id: number
+  account_name: string // 「未归类」表示没有归属账户的持仓
+  holding_count: number
+  total_cost: number
+  total_shares: number
 }
 
 export interface WatchlistItem {
