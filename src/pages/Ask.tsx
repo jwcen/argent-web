@@ -4,6 +4,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  Fragment,
   type FormEvent,
   type MouseEvent,
 } from 'react'
@@ -15,8 +16,19 @@ import {
   PaperPlaneRight,
   Trash,
   X,
+  Spinner,
+  Check,
+  Warning,
+  MagnifyingGlass,
+  ChartLine,
+  ChartLineUp,
+  Wallet,
+  ListBullets,
+  Brain,
+  Globe,
+  Coins,
 } from '@phosphor-icons/react'
-import { ask, streamAsk, ApiError } from '../lib/api'
+import { ask, streamAsk, type ToolEvent, ApiError } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { useToasts } from '../lib/toast'
 import type { Session } from '../lib/types'
@@ -26,6 +38,44 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { shortDateTime } from '../lib/format'
 
 type ChatMsg = { role: 'user' | 'assistant'; content: string }
+
+// agent 一次工具调用的前端状态（由后端 SSE 的 {type:'tool'} 累积而来）。
+type ToolCall = {
+  id: number
+  name: string
+  args: string
+  status: 'running' | 'done' | 'error'
+  result?: string
+  error?: string
+}
+
+// 工具名 → 中文标签 + 图标，让「调了什么」一眼可读（对齐老版可视化）。
+const TOOL_META: Record<string, { label: string; Icon: typeof MagnifyingGlass }> = {
+  resolve_stock: { label: '解析股票代码', Icon: MagnifyingGlass },
+  get_quote: { label: '查实时行情', Icon: ChartLine },
+  get_trend: { label: '查历史走势', Icon: ChartLineUp },
+  get_chain_quote: { label: '批量查行情', Icon: ChartLine },
+  get_fund_quote: { label: '查基金净值', Icon: Coins },
+  get_holdings: { label: '读取我的持仓', Icon: Wallet },
+  get_asset_allocation: { label: '读取资产配置', Icon: Wallet },
+  get_trades: { label: '读取成交记录', Icon: ListBullets },
+  get_thesis: { label: '读取买入逻辑', Icon: Brain },
+}
+
+// 从工具参数 JSON 里抽出关键值做一行预览（query/code/stocks/codes/start/end 等）。
+function argPreview(args: string): string {
+  if (!args) return ''
+  try {
+    const o = JSON.parse(args) as Record<string, unknown>
+    const vals = Object.entries(o)
+      .filter(([, v]) => v !== '' && v != null)
+      .map(([, v]) => (Array.isArray(v) ? (v as unknown[]).join('、') : String(v)))
+    if (vals.length === 0) return ''
+    return vals.join('  ·  ').slice(0, 90)
+  } catch {
+    return args.slice(0, 90)
+  }
+}
 
 const EXAMPLES = [
   '帮我分析一下当前持仓的风险敞口',
@@ -44,6 +94,8 @@ export default function Ask() {
   const [streaming, setStreaming] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Session | null>(null)
+  // agent 本轮调用的工具（来自后端 SSE 的 {type:'tool'} 事件），用于实时展示「正在查什么」。
+  const [toolCalls, setToolCalls] = useState<ToolCall[]>([])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
@@ -107,6 +159,7 @@ export default function Ask() {
       { role: 'user', content: text },
       { role: 'assistant', content: '' },
     ])
+    setToolCalls([])
     setStreaming(true)
     try {
       const persisted = await api(() =>
@@ -123,8 +176,34 @@ export default function Ask() {
         loadSessions()
       }
 
+      // 后端 SSE 每调一次工具就回调：call 建卡片，result/error 收口对应卡片。
+      const onTool = (t: ToolEvent) => {
+        if (t.phase === 'call') {
+          setToolCalls((prev) => [
+            ...prev,
+            { id: prev.length + 1, name: t.name, args: t.args ?? '', status: 'running' },
+          ])
+          return
+        }
+        setToolCalls((prev) => {
+          const revIdx = [...prev]
+            .reverse()
+            .findIndex((c) => c.name === t.name && c.status === 'running')
+          if (revIdx === -1) return prev
+          const idx = prev.length - 1 - revIdx
+          const next = [...prev]
+          next[idx] = {
+            ...next[idx],
+            status: t.phase === 'error' ? 'error' : 'done',
+            result: t.result,
+            error: t.error,
+          }
+          return next
+        })
+      }
+
       let acc = ''
-      for await (const chunk of streamAsk(text, history)) {
+      for await (const chunk of streamAsk(text, history, onTool)) {
         acc += chunk
         setMessages((prev) => {
           const c = [...prev]
@@ -237,7 +316,13 @@ export default function Ask() {
             </div>
           ) : (
             messages.map((m, i) => (
-              <Bubble key={i} msg={m} streaming={streaming && i === messages.length - 1} />
+              <Fragment key={i}>
+                {/* 流式回答前，把本轮 agent 调用的工具实时展示出来（对齐老版「调了好多工具」） */}
+                {i === messages.length - 1 && m.role === 'assistant' && toolCalls.length > 0 && (
+                  <ToolCalls calls={toolCalls} />
+                )}
+                <Bubble msg={m} streaming={streaming && i === messages.length - 1} />
+              </Fragment>
             ))
           )}
         </div>
@@ -413,6 +498,61 @@ function friendlyAskError(e: unknown): string {
   // 5) 其他：把可读信息原样带上，便于排查
   if (m) return `出错了：${m}`
   return '出错了，请稍后重试。'
+}
+
+// 工具调用实时卡片：agent 每调一次工具，这里就多一张卡。
+// 运行中显示转圈 + 参数预览；完成后换成对勾并附一行结果摘要。
+function ToolCalls({ calls }: { calls: ToolCall[] }) {
+  const running = calls.some((c) => c.status === 'running')
+  return (
+    <motion.div
+      className="flex flex-col gap-1.5"
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+    >
+      {running && (
+        <p className="text-micro text-ink-faint px-1 pb-0.5">正在调用工具…</p>
+      )}
+      {calls.map((c) => {
+        const meta = TOOL_META[c.name] ?? { label: c.name, Icon: MagnifyingGlass }
+        const { Icon } = meta
+        return (
+          <div
+            key={c.id}
+            className="flex items-start gap-2 rounded-[0.875rem] bg-surface/70 ring-card px-3 py-2"
+          >
+            <span className="mt-0.5 grid place-items-center w-5 h-5 shrink-0">
+              {c.status === 'running' ? (
+                <Spinner size={16} className="animate-spin text-accent" />
+              ) : c.status === 'error' ? (
+                <Warning size={16} className="text-danger" />
+              ) : (
+                <Check size={16} className="text-accent" weight="bold" />
+              )}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 text-caption font-medium text-ink-soft">
+                <Icon size={15} className="text-ink-faint" />
+                {meta.label}
+              </div>
+              {c.args && (
+                <p className="mt-0.5 text-micro text-ink-faint truncate">{argPreview(c.args)}</p>
+              )}
+              {c.status === 'done' && c.result && (
+                <p className="mt-0.5 text-micro text-ink-faint line-clamp-2 leading-relaxed">
+                  {c.result.slice(0, 160)}
+                </p>
+              )}
+              {c.status === 'error' && c.error && (
+                <p className="mt-0.5 text-micro text-danger line-clamp-2">{c.error}</p>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </motion.div>
+  )
 }
 
 function Bubble({ msg, streaming }: { msg: ChatMsg; streaming: boolean }) {

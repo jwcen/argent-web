@@ -272,10 +272,22 @@ export interface AskHistoryTurn {
   content: string
 }
 
+// agent 一次工具调用的前端视图模型，来自后端 SSE 的 {type:'tool'} 事件。
+// 后端 ToolEvent 的字段：name / args? / result? / error? / phase("call"|"result"|"error")
+export interface ToolEvent {
+  name: string
+  args?: string
+  result?: string
+  error?: string
+  phase: 'call' | 'result' | 'error'
+}
+
 // SSE 流式问答。逐字 yield 文本片段，调用方拼接到界面上即为「打字机」效果。
+// 若传入 onTool，每次 agent 调用工具（开始/返回/出错）都会回调，供前端实时展示「正在查什么」。
 export async function* streamAsk(
   question: string,
   history: AskHistoryTurn[] = [],
+  onTool?: (t: ToolEvent) => void,
 ): AsyncGenerator<string> {
   const res = await fetch('/api/ask/stock/stream', {
     method: 'POST',
@@ -317,6 +329,7 @@ export async function* streamAsk(
       try {
         const ev = JSON.parse(json)
         if (ev.type === 'answer') yield ev.text as string
+        else if (ev.type === 'tool' && onTool) onTool(ev.tool as ToolEvent)
         else if (ev.type === 'error') throw new ApiError(500, ev.error as string)
       } catch (e) {
         if (e instanceof ApiError) throw e
