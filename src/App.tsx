@@ -7,7 +7,6 @@ import Dashboard from './pages/Dashboard'
 import Portfolio from './pages/Portfolio'
 import Brokers from './pages/Brokers'
 import Ask from './pages/Ask'
-import Assets from './pages/Assets'
 
 function Protected() {
   const { user, loading } = useAuth()
@@ -30,7 +29,8 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="portfolio" element={<Portfolio />} />
         <Route path="brokers" element={<Brokers />} />
-        <Route path="assets" element={<Assets />} />
+        {/* 资产已并入持仓页（?view=funds），旧链接 /assets 重定向过去 */}
+        <Route path="assets" element={<Navigate to="/portfolio?view=funds" replace />} />
         <Route path="ask" element={<Ask />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

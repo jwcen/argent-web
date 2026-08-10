@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CaretDown, ListPlus, Plus, Trash } from '@phosphor-icons/react'
+import { useSearchParams } from 'react-router-dom'
 import { portfolio, brokers as brokerApi, accounts as accountApi, ApiError } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { useQuotes } from '../lib/useQuotes'
+import { useSettings } from '../lib/settings'
 import { useToasts } from '../lib/toast'
 import type { Action, ActionType, Broker, DividendEvent, Holding, Quote, Account } from '../lib/types'
+import { AssetsView } from './Assets'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input, Select } from '../components/ui/Input'
@@ -58,11 +61,22 @@ const today = () => new Date().toISOString().slice(0, 10)
 export default function Portfolio() {
   const api = useApi()
   const toast = useToasts()
+  const { settings, update: updateSettings } = useSettings()
+
+  // A股 / 基金 视图切换：读 URL ?view=funds（/assets 旧链接重定向到此）
+  const [searchParams, setSearchParams] = useSearchParams()
+  const view = searchParams.get('view') === 'funds' ? 'funds' : 'stocks'
+  const switchView = (v: 'stocks' | 'funds') => {
+    setSearchParams(v === 'funds' ? { view: 'funds' } : {}, { replace: true })
+  }
 
   const [holdings, setHoldings] = useState<Holding[] | null>(null)
   const [brokers, setBrokers] = useState<Broker[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
-  const [activeAccount, setActiveAccount] = useState<number | null>(null) // null=全部
+  // 初始打开设置里选定的「默认账户」，没设过则为全部
+  const [activeAccount, setActiveAccount] = useState<number | null>(
+    settings.defaultAccount ?? null,
+  )
   const [expanded, setExpanded] = useState<string | null>(null)
   const [actions, setActions] = useState<Record<string, Action[]>>({})
   const [loadingCode, setLoadingCode] = useState<string | null>(null)
@@ -88,6 +102,12 @@ export default function Portfolio() {
       .catch(() => setAccounts([]))
   }
   useEffect(load, [api, activeAccount])
+
+  // 切换账户 Tab 时同步写回设置，下次打开持仓记住选择
+  const selectAccount = (id: number | null) => {
+    setActiveAccount(id)
+    updateSettings({ defaultAccount: id })
+  }
 
   const totalCost = useMemo(
     () => (holdings ?? []).reduce((s, h) => s + h.shares * h.cost_price, 0),
@@ -158,20 +178,52 @@ export default function Portfolio() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="持仓"
-        description="每一笔流水都会自动重算持仓成本，账本本身就是唯一真相源。"
+        title={view === 'funds' ? '基金持仓' : '持仓'}
+        description={
+          view === 'funds'
+            ? '场外基金、理财、黄金等统一记账；截图导入快速录持仓。'
+            : '每一笔流水都会自动重算持仓成本，账本本身就是唯一真相源。'
+        }
         action={
-          <Button icon={<Plus size={18} weight="bold" />} onClick={() => openAdd()}>
-            记一笔交易
-          </Button>
+          view === 'stocks' ? (
+            <Button icon={<Plus size={18} weight="bold" />} onClick={() => openAdd()}>
+              记一笔交易
+            </Button>
+          ) : undefined
         }
       />
 
+      {/* A股 / 基金 视图切换 */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => switchView('stocks')}
+          aria-pressed={view === 'stocks'}
+          className={`min-h-10 px-5 rounded-full text-caption font-semibold transition-colors ${
+            view === 'stocks' ? 'bg-accent text-white' : 'bg-surface-2 text-ink-soft hover:bg-surface-2/80'
+          }`}
+        >
+          A股
+        </button>
+        <button
+          onClick={() => switchView('funds')}
+          aria-pressed={view === 'funds'}
+          className={`min-h-10 px-5 rounded-full text-caption font-semibold transition-colors ${
+            view === 'funds' ? 'bg-accent text-white' : 'bg-surface-2 text-ink-soft hover:bg-surface-2/80'
+          }`}
+        >
+          基金
+        </button>
+      </div>
+
+      {view === 'funds' ? (
+        <AssetsView />
+      ) : (
+        <>
       {/* 账户 Tab 栏：全部 / 各自定义账户 */}
       {accounts.length > 0 && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           <button
-            onClick={() => setActiveAccount(null)}
+            onClick={() => selectAccount(null)}
             className={`shrink-0 px-4 py-2 rounded-full text-caption font-medium transition-colors ${
               activeAccount === null
                 ? 'bg-accent text-white'
@@ -183,7 +235,7 @@ export default function Portfolio() {
           {accounts.map((a) => (
             <button
               key={a.id}
-              onClick={() => setActiveAccount(a.id)}
+              onClick={() => selectAccount(a.id)}
               className={`shrink-0 px-4 py-2 rounded-full text-caption font-medium transition-colors ${
                 activeAccount === a.id
                   ? 'bg-accent text-white'
@@ -447,6 +499,8 @@ export default function Portfolio() {
           load()
         }}
       />
+        </>
+      )}
     </div>
   )
 }

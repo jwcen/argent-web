@@ -59,7 +59,10 @@ const ACTION_LABEL: Record<string, string> = {
 
 const today = () => new Date().toISOString().slice(0, 10)
 
-export default function Assets() {
+// AssetsView 是「场外资产」视图（基金/加密/理财/现金/黄金）。
+// 已并入持仓页（?view=funds），不再独立成导航页面：顶部操作行自带，
+// 标题交给宿主页面（Portfolio）统一渲染。
+export function AssetsView() {
   const api = useApi()
   const toast = useToasts()
 
@@ -146,20 +149,15 @@ export default function Assets() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="资产"
-        description="基金、加密、理财、现金、黄金与机器人——场外资产统一记账，与 A 股持仓分开管理。"
-        action={
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" icon={<Camera size={18} weight="bold" />} onClick={() => setImportOpen(true)}>
-              截图导入
-            </Button>
-            <Button icon={<Plus size={18} weight="bold" />} onClick={() => setAssetModal({ open: true })}>
-              记一笔资产
-            </Button>
-          </div>
-        }
-      />
+      {/* 操作行：截图导入 / 记一笔资产（并入持仓页后，标题由宿主页提供） */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" icon={<Camera size={18} weight="bold" />} onClick={() => setImportOpen(true)}>
+          截图导入
+        </Button>
+        <Button icon={<Plus size={18} weight="bold" />} onClick={() => setAssetModal({ open: true })}>
+          记一笔资产
+        </Button>
+      </div>
 
       {/* 汇总条 */}
       {assets && openAssets.length > 0 && (
