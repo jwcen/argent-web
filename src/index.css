@@ -54,6 +54,7 @@
   --sh-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 12px 32px -12px rgb(0 0 0 / 0.12);
   --sh-lift: 0 2px 4px rgb(0 0 0 / 0.05), 0 24px 56px -20px rgb(0 0 0 / 0.22);
   --sh-pop: 0 24px 64px -12px rgb(0 0 0 / 0.28);
+  --sh-float: 0 8px 32px -4px rgb(0 0 0 / 0.12), 0 0 0 1px rgb(0 0 0 / 0.04);
 
   /* 卡片描边：浅色下几乎透明，层级主要靠阴影 */
   --c-card-ring: rgb(0 0 0 / 0.05);
@@ -106,6 +107,7 @@
   --sh-card: 0 1px 1px rgb(0 0 0 / 0.5);
   --sh-lift: 0 8px 32px -8px rgb(0 0 0 / 0.8);
   --sh-pop: 0 24px 64px -12px rgb(0 0 0 / 0.9);
+  --sh-float: 0 8px 32px -4px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
 
   /* 描边在深色下承担主要的层级表达 */
   --c-card-ring: rgb(255 255 255 / 0.10);
@@ -182,6 +184,7 @@
   --shadow-card: var(--sh-card);
   --shadow-lift: var(--sh-lift);
   --shadow-pop: var(--sh-pop);
+  --shadow-float: var(--sh-float);
 
   --radius-card: 1.5rem;
   --radius-tile: 1.125rem;
@@ -280,9 +283,9 @@ h3 {
 @utility mb-safe {
   margin-bottom: env(safe-area-inset-bottom, 0px);
 }
-/* 底部 Tab Bar 高度 + 安全区，供内容区留白使用 */
+/* 底部悬浮 Tab Bar 高度（h-14=56px）+ 悬浮间距(≈12px) + 安全区，供内容区留白使用 */
 @utility pb-tabbar {
-  padding-bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(3.5rem + 12px + env(safe-area-inset-bottom, 0px));
 }
 /* 底部 sheet 的内边距 + 安全区。合成一个类，避免 pb-5 与 pb-safe
    争夺同一个 padding-bottom（谁赢取决于 CSS 顺序，很脆）。 */
@@ -371,4 +374,16 @@ h3 {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ── 紧凑布局 ───────────────────────────────────────────────────
+   由「设置 → 外观 → 紧凑模式」开启，挂在 <html data-compact>。
+   只收紧主内容区（main）内的卡片与留白，抽屉/弹窗等浮层不受影响，
+   避免误伤需要稳定间距的对话框排版。                          */
+html[data-compact] main {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+html[data-compact] main .rounded-card {
+  padding: 0.875rem;
 }
