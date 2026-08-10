@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Coins,
@@ -14,16 +14,18 @@ import {
   Repeat,
   CalendarBlank,
   ArrowsLeftRight,
+  Camera,
 } from '@phosphor-icons/react'
-import { assets as assetApi, dca as dcaApi, ApiError } from '../lib/api'
+import { assets as assetApi, dca as dcaApi, market as marketApi, imports as importApi, portfolio as portfolioApi, ApiError } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { useToasts } from '../lib/toast'
-import type { AssetType, DCASchedule, ExternalAction, ExternalAsset } from '../lib/types'
+import type { AssetType, DCASchedule, ExternalAction, ExternalAsset, FundQuote, ImportRecord } from '../lib/types'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input, Select } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { Switch } from '../components/ui/Switch'
 import { Skeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
 import { Badge } from '../components/ui/Badge'
@@ -70,6 +72,7 @@ export default function Assets() {
   const [assetModal, setAssetModal] = useState<{ open: boolean; editing?: ExternalAsset }>({ open: false })
   const [lotModal, setLotModal] = useState<{ open: boolean; asset: ExternalAsset; kind: 'add' | 'reduce' } | null>(null)
   const [dcaModal, setDcaModal] = useState<{ open: boolean; editing?: DCASchedule }>({ open: false })
+  const [importOpen, setImportOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<{ kind: 'asset' | 'action' | 'dca'; assetId?: number; actionId?: number; dcaId?: number } | null>(null)
   const [deleting, setDeleting] = useState(false)
 
@@ -147,9 +150,14 @@ export default function Assets() {
         title="资产"
         description="基金、加密、理财、现金、黄金与机器人——场外资产统一记账，与 A 股持仓分开管理。"
         action={
-          <Button icon={<Plus size={18} weight="bold" />} onClick={() => setAssetModal({ open: true })}>
-            记一笔资产
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" icon={<Camera size={18} weight="bold" />} onClick={() => setImportOpen(true)}>
+              截图导入
+            </Button>
+            <Button icon={<Plus size={18} weight="bold" />} onClick={() => setAssetModal({ open: true })}>
+              记一笔资产
+            </Button>
+          </div>
         }
       />
 
@@ -396,6 +404,18 @@ export default function Assets() {
         )}
       </section>
 
+      {/* 截图导入 */}
+      {importOpen && (
+        <ImportModal
+          onClose={() => setImportOpen(false)}
+          onImported={() => {
+            setImportOpen(false)
+            toast.success('导入完成')
+            load()
+          }}
+        />
+      )}
+
       {/* 资产创建/编辑 */}
       {assetModal.open && (
         <AssetModal
@@ -466,6 +486,31 @@ function AssetModal({ editing, onClose, onSaved }: { editing?: ExternalAsset; on
   const [yieldRate, setYieldRate] = useState(editing?.annual_yield_rate != null ? String(editing.annual_yield_rate) : '')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
+  const [fundInfo, setFundInfo] = useState<FundQuote | null>(null)
+  const [lookingUp, setLookingUp] = useState(false)
+
+  // 输代码自动带出基金名称 + 最新净值（FUND/CRYPTO 类型才查，其他类型跳过）。
+  // 用 useMemo 的依赖触发：code 连续输入时只有稳定后才查（简单 debounce 由 setTimeout 完成）。
+  useEffect(() => {
+    const c = code.trim()
+    if (!c || editing || (type !== 'FUND' && type !== 'CRYPTO')) {
+      setFundInfo(null)
+      return
+    }
+    setLookingUp(true)
+    const t = setTimeout(() => {
+      void api(() => marketApi.funds([c]))
+        .then((list) => {
+          const f = list[0]
+          setFundInfo(f ?? null)
+          if (f && !name.trim()) setName(f.name) // 名称没手动填就自动带出
+        })
+        .catch(() => setFundInfo(null))
+        .finally(() => setLookingUp(false))
+    }, 500)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, type])
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -526,6 +571,14 @@ function AssetModal({ editing, onClose, onSaved }: { editing?: ExternalAsset; on
           <Input label="代码" name="code" placeholder="如 110011" value={code} error={errors.code} onChange={(e) => setCode(e.target.value)} />
           <Input label="名称" name="name" placeholder="如 易方达蓝筹" value={name} error={errors.name} onChange={(e) => setName(e.target.value)} />
         </div>
+        {lookingUp ? (
+          <p className="text-micro text-ink-faint">查询基金信息中…</p>
+        ) : fundInfo ? (
+          <p className="text-micro text-ink-soft tnum">
+            已查到：{fundInfo.name} · 最新净值 <span className="text-accent font-semibold">{fundInfo.unit_nav.toFixed(4)}</span>
+            {fundInfo.date ? `（${fundInfo.date}）` : ''}
+          </p>
+        ) : null}
         <Input label="平台（可选）" name="platform" placeholder="如 蚂蚁财富" value={platform} onChange={(e) => setPlatform(e.target.value)} />
         <div className="grid grid-cols-2 gap-3">
           <Input label="成本金额" name="cost" type="number" step="0.01" inputMode="decimal" placeholder="0.00" value={cost} error={errors.cost} onChange={(e) => setCost(e.target.value)} />
@@ -557,10 +610,16 @@ function LotModal({ asset, kind, onClose, onSaved }: { asset: ExternalAsset; kin
   const [fee, setFee] = useState('')
   const [date, setDate] = useState(today())
   const [note, setNote] = useState('')
+  const [pending, setPending] = useState(false) // T+1 待确认（OTC 基金申购/赎回）
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
 
   const actionType = kind === 'add' ? 'BUY' : 'REDEEM'
+
+  // 金额 ÷ 净值 → 自动算份额（有净值时给提示，不强制写回，用户可手动覆盖）
+  const amt = parseFloat(amount)
+  const nav = parseFloat(unitPrice)
+  const autoShares = !Number.isNaN(amt) && !Number.isNaN(nav) && nav > 0 && amt > 0 ? amt / nav : null
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -573,10 +632,11 @@ function LotModal({ asset, kind, onClose, onSaved }: { asset: ExternalAsset; kin
     const body = {
       action_type: actionType,
       amount: amt,
-      shares: shares ? parseFloat(shares) : null,
+      shares: shares ? parseFloat(shares) : autoShares ?? null,
       unit_price: unitPrice ? parseFloat(unitPrice) : null,
       fee: fee ? parseFloat(fee) : 0,
       trade_date: date,
+      status: pending ? 'pending' : 'confirmed',
       note: note || undefined,
     }
     try {
@@ -595,8 +655,20 @@ function LotModal({ asset, kind, onClose, onSaved }: { asset: ExternalAsset; kin
       <form onSubmit={submit} className="space-y-4" noValidate>
         <Input label="金额" name="amount" type="number" step="0.01" inputMode="decimal" placeholder="0.00" value={amount} error={errors.amount} onChange={(e) => setAmount(e.target.value)} />
         <div className="grid grid-cols-2 gap-3">
-          <Input label="份额（可选）" name="shares" type="number" step="0.0001" inputMode="decimal" placeholder="0" value={shares} onChange={(e) => setShares(e.target.value)} />
-          <Input label="单价（可选）" name="price" type="number" step="0.0001" inputMode="decimal" placeholder="0" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
+          <Input label="份额（可选）" name="shares" type="number" step="0.0001" inputMode="decimal" placeholder={autoShares ? autoShares.toFixed(4) : '0'} value={shares} onChange={(e) => setShares(e.target.value)} />
+          <Input label="单价/净值（可选）" name="price" type="number" step="0.0001" inputMode="decimal" placeholder="0" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
+        </div>
+        {autoShares != null && !shares && (
+          <p className="text-micro text-ink-soft tnum">
+            按净值 {nav.toFixed(4)} 计算，本次约 <span className="text-accent font-semibold">{autoShares.toFixed(4)}</span> 份
+          </p>
+        )}
+        <div className="flex items-center justify-between gap-3 rounded-tile bg-surface-2/60 px-4 py-3">
+          <div>
+            <p className="text-caption font-medium">T+1 待确认</p>
+            <p className="text-micro text-ink-faint">场外基金申购/赎回未结算份额时开启</p>
+          </div>
+          <Switch checked={pending} onChange={setPending} label="T+1 待确认" />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Input label="费用（可选）" name="fee" type="number" step="0.01" inputMode="decimal" placeholder="0" value={fee} onChange={(e) => setFee(e.target.value)} />
@@ -718,6 +790,279 @@ function DcaModal({ assets, editing, onClose, onSaved }: { assets: ExternalAsset
           <Button type="submit" loading={busy} className="flex-1">保存</Button>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+/**
+ * 截图导入：上传基金/券商 App 截图 → LLM 识别 → 展示可编辑草稿 → 逐条入库。
+ *
+ * 识别只调 /api/import/screenshot（返回草稿）；确认后按 kind 分流：
+ *   - fund  → 已有同 code 资产则加仓，否则先建资产再加仓
+ *   - stock → 走持仓流水接口（BUY）
+ */
+function ImportModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
+  const api = useApi()
+  const toast = useToasts()
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [image, setImage] = useState<string | null>(null) // data URL 预览
+  const [file, setFile] = useState<File | null>(null)
+  const [records, setRecords] = useState<ImportRecord[] | null>(null)
+  const [recognizing, setRecognizing] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+
+  const pick = (f: File | undefined | null) => {
+    if (!f || !f.type.startsWith('image/')) {
+      toast.error('请选择图片文件')
+      return
+    }
+    setFile(f)
+    setRecords(null)
+    const reader = new FileReader()
+    reader.onload = () => setImage(String(reader.result))
+    reader.readAsDataURL(f)
+  }
+
+  const recognize = async () => {
+    if (!file) return
+    setRecognizing(true)
+    setRecords(null)
+    try {
+      const res = await api(() => importApi.screenshot(file))
+      setRecords(res.records ?? [])
+      if (!res.records || res.records.length === 0) toast.info('没有识别到投资记录，换个截图试试')
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : '识别失败')
+    } finally {
+      setRecognizing(false)
+    }
+  }
+
+  const patch = (i: number, p: Partial<ImportRecord>) => {
+    setRecords((rs) => (rs ?? []).map((r, idx) => (idx === i ? { ...r, ...p } : r)))
+  }
+
+  const remove = (i: number) => {
+    setRecords((rs) => (rs ?? []).filter((_, idx) => idx !== i))
+  }
+
+  const doImport = async () => {
+    if (!records || records.length === 0) return
+    setImporting(true)
+    let ok = 0
+    let fail = 0
+    try {
+      // 基金导入前拉一次现有资产，用于「同 code → 加仓」而非重复建资产
+      let existing: ExternalAsset[] = []
+      try {
+        existing = await api(() => assetApi.list())
+      } catch {
+        existing = []
+      }
+
+      for (const r of records) {
+        try {
+          if (r.kind === 'fund') {
+            const code = r.code.trim()
+            const found = existing.find((a) => a.code === code && a.asset_type === 'FUND')
+            let assetId = found?.id
+            if (!assetId) {
+              const created = await api(() =>
+                assetApi.create({
+                  asset_type: 'FUND',
+                  code,
+                  name: r.name || code,
+                  platform: r.platform || '截图导入',
+                  start_date: r.trade_date || undefined,
+                }),
+              )
+              assetId = created.id
+            }
+            await api(() =>
+              assetApi.addLot(assetId!, {
+                action_type: r.action_type === 'REDEEM' ? 'REDEEM' : 'BUY',
+                amount: r.amount ?? 0,
+                shares: r.shares != null ? r.shares : null,
+                unit_price: r.nav != null ? r.nav : null,
+                trade_date: r.trade_date || today(),
+                status: r.status === 'pending' ? 'pending' : 'confirmed',
+              }),
+            )
+          } else {
+            // stock → A 股持仓流水
+            await api(() =>
+              portfolioApi.createAction(r.code.trim(), {
+                action_type: r.action_type === 'SELL' ? 'SELL' : 'BUY',
+                price: r.price ?? r.nav ?? 0,
+                shares: Math.round(r.shares ?? 0),
+                trade_date: r.trade_date || today(),
+              }),
+            )
+          }
+          ok++
+        } catch {
+          fail++
+        }
+      }
+    } finally {
+      setImporting(false)
+    }
+    if (ok > 0) {
+      toast.success(`已导入 ${ok} 条${fail > 0 ? `，${fail} 条失败` : ''}`)
+      onImported()
+    } else {
+      toast.error(fail > 0 ? '全部导入失败，请检查字段后重试' : '没有可导入的记录')
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="截图导入">
+      <div className="space-y-4">
+        {/* 上传区 */}
+        {!image ? (
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setDragOver(true)
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragOver(false)
+              pick(e.dataTransfer.files?.[0])
+            }}
+            className={`w-full min-h-36 rounded-tile border-2 border-dashed grid place-items-center text-center px-6 transition-colors ${
+              dragOver ? 'border-accent bg-accent-soft/50' : 'border-line text-ink-soft hover:border-accent/50'
+            }`}
+          >
+            <div>
+              <Camera size={30} weight="duotone" className="mx-auto mb-2 text-ink-faint" />
+              <p className="text-caption font-medium">点击或拖入基金/券商 App 截图</p>
+              <p className="mt-1 text-micro text-ink-faint">支付宝、天天基金、券商持仓页均可</p>
+            </div>
+          </button>
+        ) : (
+          <div className="relative overflow-hidden rounded-tile bg-surface-2">
+            <img src={image} alt="截图预览" className="w-full max-h-64 object-contain" />
+            <button
+              type="button"
+              onClick={() => {
+                setImage(null)
+                setFile(null)
+                setRecords(null)
+              }}
+              className="absolute top-2 right-2 w-9 h-9 grid place-items-center rounded-full bg-black/55 text-white text-micro"
+              aria-label="重选图片"
+            >
+              换图
+            </button>
+          </div>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => pick(e.target.files?.[0])}
+        />
+
+        {/* 识别按钮 */}
+        {image && !recognizing && records === null && (
+          <Button className="w-full" onClick={recognize} icon={<Camera size={18} weight="bold" />}>
+            开始识别
+          </Button>
+        )}
+        {recognizing && <Skeleton className="h-24 rounded-tile" />}
+
+        {/* 识别结果 */}
+        {records !== null && (
+          <div className="space-y-3">
+            <p className="text-caption font-medium text-ink-soft">
+              识别到 {records.length} 条记录，可修改后导入：
+            </p>
+            {records.length === 0 ? (
+              <p className="text-caption text-ink-faint">无记录。换个更清晰的截图重试。</p>
+            ) : (
+              records.map((r, i) => (
+                <div key={i} className="rounded-tile bg-surface-2/60 px-3 py-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Badge tone={r.kind === 'fund' ? 'accent' : 'neutral'}>{r.kind === 'fund' ? '基金' : '股票'}</Badge>
+                      <span className="text-caption font-medium truncate">{r.name || r.code || `记录 ${i + 1}`}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => remove(i)}
+                      className="w-9 h-9 grid place-items-center rounded-full text-ink-faint hover:text-danger hover:bg-danger/10"
+                      aria-label="删除该条"
+                    >
+                      <Trash size={16} />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input label="代码" value={r.code} onChange={(e) => patch(i, { code: e.target.value })} />
+                    <Input label="名称" value={r.name} onChange={(e) => patch(i, { name: e.target.value })} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Input label="金额" type="number" value={r.amount != null ? String(r.amount) : ''} onChange={(e) => patch(i, { amount: parseFloat(e.target.value) || 0 })} />
+                    <Input label="份额/股数" type="number" value={r.shares != null ? String(r.shares) : ''} onChange={(e) => patch(i, { shares: parseFloat(e.target.value) || 0 })} />
+                    <Input
+                      label={r.kind === 'fund' ? '净值' : '单价'}
+                      type="number"
+                      value={r.kind === 'fund' ? (r.nav != null ? String(r.nav) : '') : (r.price != null ? String(r.price) : '')}
+                      onChange={(e) =>
+                        r.kind === 'fund'
+                          ? patch(i, { nav: parseFloat(e.target.value) || 0 })
+                          : patch(i, { price: parseFloat(e.target.value) || 0 })
+                      }
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input label="交易日期" type="date" value={r.trade_date ?? ''} onChange={(e) => patch(i, { trade_date: e.target.value })} />
+                    <Select label="动作" value={r.action_type || (r.kind === 'fund' ? 'BUY' : 'SELL')} onChange={(e) => patch(i, { action_type: e.target.value })}>
+                      {r.kind === 'fund' ? (
+                        <>
+                          <option value="BUY">申购 / 买入</option>
+                          <option value="REDEEM">赎回</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="BUY">买入</option>
+                          <option value="SELL">卖出</option>
+                        </>
+                      )}
+                    </Select>
+                  </div>
+                  <label className="flex items-center gap-2 text-micro text-ink-soft cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={r.status === 'pending'}
+                      onChange={(e) => patch(i, { status: e.target.checked ? 'pending' : 'confirmed' })}
+                      className="accent-accent"
+                    />
+                    T+1 待确认（未结算）
+                  </label>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* 操作 */}
+        {records !== null && records.length > 0 && (
+          <div className="flex gap-3 pt-1">
+            <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
+              取消
+            </Button>
+            <Button type="button" loading={importing} className="flex-1" onClick={doImport}>
+              确认导入
+            </Button>
+          </div>
+        )}
+      </div>
     </Modal>
   )
 }

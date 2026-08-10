@@ -10,7 +10,9 @@ import type {
   DividendEvent,
   ExternalAction,
   ExternalAsset,
+  FundQuote,
   Holding,
+  ImportRecord,
   MarketIndex,
   Quote,
   Message,
@@ -36,9 +38,15 @@ export class ApiError extends Error {
 export const UNAUTHORIZED = 'UNAUTHORIZED'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // FormData 时不能手动设 Content-Type：浏览器必须自动生成 multipart boundary，
+  // 否则后端收不到 file 字段。其他情况默认 JSON。
+  const isForm = init?.body instanceof FormData
+  const headers = isForm
+    ? { ...(init?.headers || {}) }
+    : { 'Content-Type': 'application/json', ...(init?.headers || {}) }
   const res = await fetch(path, {
     credentials: 'include', // 同源代理下自动带上 HttpOnly 会话 cookie
-    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+    headers,
     ...init,
   })
 
@@ -226,6 +234,20 @@ export const market = {
   quote: (code: string) => get<Record<string, unknown>>(`/api/market/quote/${code}`),
   batchQuote: (codes: string[]) =>
     get<Quote[]>(`/api/market/quote?codes=${codes.join(',')}`),
+  funds: (codes: string[]) =>
+    get<FundQuote[]>(`/api/market/funds?codes=${codes.join(',')}`),
+}
+
+// ── 截图导入（LLM 识别 → 返回草稿，确认后走 assets/portfolio 创建）──
+export const imports = {
+  screenshot: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<{ records: ImportRecord[] }>('/api/import/screenshot', {
+      method: 'POST',
+      body: form,
+    })
+  },
 }
 
 // ── 问问市场 ──

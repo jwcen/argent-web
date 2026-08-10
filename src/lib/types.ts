@@ -171,6 +171,33 @@ export interface DCASchedule {
   note?: string
 }
 
+// ── 基金净值查询（新浪 f_ 接口）──
+export interface FundQuote {
+  code: string
+  name: string
+  unit_nav: number
+  cum_nav: number
+  prev_nav: number
+  date: string // YYYY-MM-DD
+  change_pct: number
+}
+
+// ── 截图导入：LLM 识别出的记录草稿 ──
+export interface ImportRecord {
+  kind: 'fund' | 'stock'
+  code: string
+  name: string
+  action_type: string // BUY | ADD | REDEEM | SELL
+  amount?: number
+  shares?: number
+  nav?: number
+  price?: number
+  trade_date?: string
+  platform?: string
+  fee?: number
+  status?: string // confirmed / pending
+}
+
 // 问问市场：会话与消息
 export interface Session {
   id: number
