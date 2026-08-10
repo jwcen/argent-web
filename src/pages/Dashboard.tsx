@@ -10,11 +10,11 @@ import {
   Storefront,
   Wallet,
 } from '@phosphor-icons/react'
-import { portfolio, market } from '../lib/api'
+import { portfolio, market, assets as assetApi } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { useQuotes } from '../lib/useQuotes'
 import { useAuth } from '../lib/auth'
-import type { Action, Curve, Holding, MarketIndex, Quote } from '../lib/types'
+import type { Action, Curve, ExternalAction, ExternalAsset, FundQuote, Holding, MarketIndex, Quote } from '../lib/types'
 import { Card } from '../components/ui/Card'
 import { Glow } from '../components/ui/Glow'
 import { Button } from '../components/ui/Button'
@@ -77,6 +77,9 @@ export default function Dashboard() {
   const [actions, setActions] = useState<Action[] | null>(null)
   const [indices, setIndices] = useState<MarketIndex[] | null>(null)
   const [curve, setCurve] = useState<Curve | undefined>(undefined)
+  const [assets, setAssets] = useState<ExternalAsset[]>([])
+  const [fundNavs, setFundNavs] = useState<Record<string, FundQuote>>({})
+  const [fundActions, setFundActions] = useState<ExternalAction[]>([])
 
   useEffect(() => {
     void api(() => portfolio.listHoldings())
@@ -96,6 +99,37 @@ export default function Dashboard() {
         setActions([])
       })
 
+    // 场外资产（基金/理财等）：概览统计与 A 股合并
+    void api(() => assetApi.list())
+      .then((list) => {
+        setAssets(list)
+        // 只有 6 位数字代码的基金类资产才能查净值；其余靠 manual_value/成本兜底
+        const fundCodes = list
+          .filter((a) => !a.closed && /^\d{6}$/.test(a.code) && (a.asset_type === 'FUND' || a.asset_type === 'GOLD'))
+          .map((a) => a.code)
+        if (fundCodes.length === 0) {
+          setFundNavs({})
+        } else {
+          void api(() => market.funds(fundCodes))
+            .then((fs) => {
+              const map: Record<string, FundQuote> = {}
+              for (const f of fs) map[f.code] = f
+              setFundNavs(map)
+            })
+            .catch(() => setFundNavs({}))
+        }
+        // 基金流水并入「流水笔数/交易日/资金流向」统计（失败不打断）
+        const openAssets = list.filter((a) => !a.closed)
+        void Promise.all(
+          openAssets.slice(0, 20).map((a) =>
+            assetApi.listActions(a.id).catch(() => [] as import('../lib/types').ExternalAction[]),
+          ),
+        ).then((chunks) => {
+          setFundActions(chunks.flat())
+        })
+      })
+      .catch(() => setAssets([]))
+
     // 行情依赖外部数据源，挂了就静默降级，不打断主流程
     void api(() => market.indices())
       .then(setIndices)
@@ -107,15 +141,35 @@ export default function Dashboard() {
       .catch(() => setCurve(undefined))
   }, [api])
 
+  // ── 统计口径：A 股 + 场外资产合并 ──
+  // 场外资产市值：manual_value 优先（用户手动估值/锁定市值）；其次净值×份额（可查净值时）；
+  // 都没有 → 回落成本（绝不以假数据充市值，与资产页同一口径）。
+  const fundCost = useMemo(
+    () => (assets ?? []).filter((a) => !a.closed).reduce((s, a) => s + (a.cost_amount || 0), 0),
+    [assets],
+  )
+  const fundMarketValue = useMemo(
+    () =>
+      (assets ?? [])
+        .filter((a) => !a.closed)
+        .reduce((s, a) => {
+          if (a.manual_value != null) return s + a.manual_value
+          const nav = fundNavs[a.code]
+          if (nav && a.shares) return s + nav.unit_nav * a.shares
+          return s + (a.cost_amount || 0)
+        }, 0),
+    [assets, fundNavs],
+  )
+
   const totalCost = useMemo(
-    () => holdings?.reduce((s, h) => s + h.shares * h.cost_price, 0) ?? 0,
-    [holdings],
+    () => (holdings?.reduce((s, h) => s + h.shares * h.cost_price, 0) ?? 0) + fundCost,
+    [holdings, fundCost],
   )
 
   // 实时行情：按持仓代码批量报价，无源时优雅降级为 {}（不编造市值）。
   const holdingCodes = useMemo(() => (holdings ?? []).map((h) => h.stock_code), [holdings])
   const quotes = useQuotes(holdingCodes)
-  const totalMarketValue = useMemo(
+  const stockMarketValue = useMemo(
     () =>
       (holdings ?? []).reduce(
         (s, h) =>
@@ -124,18 +178,31 @@ export default function Dashboard() {
       ),
     [holdings, quotes],
   )
-  const hasQuote = useMemo(() => (holdings ?? []).some((h) => quotes[h.stock_code]), [holdings, quotes])
+  const totalMarketValue = stockMarketValue + fundMarketValue
+  const hasQuote = useMemo(
+    () =>
+      (holdings ?? []).some((h) => quotes[h.stock_code]) ||
+      fundMarketValue > fundCost, // 场外资产有真实估值也算「有行情」
+    [holdings, quotes, fundMarketValue, fundCost],
+  )
   const totalPnL = totalMarketValue - totalCost
 
+  // 持仓分布：A 股 + 场外资产一起按成本口径排（场外未关闭的才算）
   const slices = useMemo<Slice[]>(() => {
-    if (!holdings || holdings.length === 0) return []
-    const sorted = [...holdings]
-      .map((h) => ({ label: h.stock_name || h.stock_code, value: h.shares * h.cost_price }))
+    const stockSlices = (holdings ?? []).map((h) => ({
+      label: h.stock_name || h.stock_code,
+      value: h.shares * h.cost_price,
+    }))
+    const assetSlices = (assets ?? [])
+      .filter((a) => !a.closed)
+      .map((a) => ({ label: a.name || a.code, value: a.cost_amount || 0 }))
+    const sorted = [...stockSlices, ...assetSlices]
+      .filter((d) => d.value > 0)
       .sort((a, b) => b.value - a.value)
     if (sorted.length <= 5) return sorted
     const rest = sorted.slice(5).reduce((s, d) => s + d.value, 0)
     return [...sorted.slice(0, 5), { label: '其他', value: rest }]
-  }, [holdings])
+  }, [holdings, assets])
 
   // 净值曲线：TWR（起点 100）作主区，沪深300 基准作对比线（同为 100 起点可直接比）
   const twrPoints = useMemo<TrendPoint[]>(
@@ -148,22 +215,37 @@ export default function Dashboard() {
   )
 
   const flow = useMemo(() => {
-    const buy = (actions ?? [])
+    const stockBuy = (actions ?? [])
       .filter((a) => a.action_type === 'BUY')
       .reduce((s, a) => s + a.price * a.shares, 0)
-    const sell = (actions ?? [])
+    const stockSell = (actions ?? [])
       .filter((a) => a.action_type === 'SELL')
       .reduce((s, a) => s + a.price * a.shares, 0)
-    return { buy, sell }
-  }, [actions])
+    // 基金流水：amount 即金额（含费），BUY/ADD 计入买入，REDEEM 计入卖出
+    const fundBuy = (fundActions ?? [])
+      .filter((a) => a.action_type === 'BUY' || a.action_type === 'ADD')
+      .reduce((s, a) => s + (a.amount || 0), 0)
+    const fundSell = (fundActions ?? [])
+      .filter((a) => a.action_type === 'REDEEM')
+      .reduce((s, a) => s + (a.amount || 0), 0)
+    return { buy: stockBuy + fundBuy, sell: stockSell + fundSell }
+  }, [actions, fundActions])
+
+  // 全部流水（A股 + 基金）用于「流水笔数 / 交易日」统计
+  const allActions = useMemo(
+    () => [...(actions ?? []), ...(fundActions ?? [])],
+    [actions, fundActions],
+  )
 
   const brokerCount = useMemo(
     () => new Set((holdings ?? []).map((h) => h.broker).filter(Boolean)).size,
     [holdings],
   )
 
+  const openAssetCount = useMemo(() => (assets ?? []).filter((a) => !a.closed).length, [assets])
+
   const loading = holdings === null
-  const empty = holdings !== null && holdings.length === 0
+  const empty = holdings !== null && holdings.length === 0 && openAssetCount === 0
   const liveIndices = (indices ?? []).map(readIndex).filter((r) => !Number.isNaN(r.price))
 
   return (
@@ -189,14 +271,15 @@ export default function Dashboard() {
           )}
 
           <p className="mt-3 text-caption text-ink-soft">
-            累计投入成本 · 覆盖 {loading ? '—' : fmtNum(holdings?.length ?? 0)} 只标的
+            累计投入成本 · 覆盖{' '}
+            {loading ? '—' : fmtNum((holdings?.length ?? 0) + openAssetCount)} 只标的
           </p>
 
           <dl className="mt-6 flex flex-wrap gap-x-8 gap-y-4">
-            <Stat label="流水笔数" value={actions === null ? null : actions.length} />
+            <Stat label="流水笔数" value={loading ? null : allActions.length} />
             <Stat
               label="交易日"
-              value={actions === null ? null : new Set(actions.map((a) => dateOnly(a.trade_date))).size}
+              value={loading ? null : new Set(allActions.map((a) => dateOnly(a.trade_date))).size}
             />
             <Stat label="关联券商" value={loading ? null : brokerCount} />
             {hasQuote && !loading && (
@@ -439,7 +522,8 @@ export default function Dashboard() {
               </div>
             ) : (
               <ul className="mt-2 px-2 sm:px-3 pb-3 sm:pb-4">
-                {(holdings ?? []).slice(0, 6).map((h) => {
+                {/* A 股持仓 */}
+                {(holdings ?? []).slice(0, 5).map((h) => {
                   const q: Quote | undefined = quotes[h.stock_code]
                   const costValue = h.shares * h.cost_price
                   const mv = q ? q.price * h.shares : costValue
@@ -484,6 +568,57 @@ export default function Dashboard() {
                   </li>
                   )
                 })}
+                {/* 场外资产（基金等） */}
+                {(assets ?? [])
+                  .filter((a) => !a.closed)
+                  .slice(0, 4)
+                  .map((a) => {
+                    const nav = fundNavs[a.code]
+                    const mv =
+                      a.manual_value != null
+                        ? a.manual_value
+                        : nav && a.shares
+                          ? nav.unit_nav * a.shares
+                          : a.cost_amount || 0
+                    const pnl = mv - (a.cost_amount || 0)
+                    const pct = a.cost_amount > 0 ? (pnl / a.cost_amount) * 100 : 0
+                    const hasEst = a.manual_value != null || (nav && a.shares)
+                    return (
+                    <li key={`a${a.id}`}>
+                      <button
+                        onClick={() => navigate('/portfolio?view=funds')}
+                        className="w-full min-h-[3.5rem] flex items-center justify-between gap-3 rounded-tile px-3 py-3 text-left transition-colors hover:bg-surface-2 active:bg-surface-2"
+                      >
+                        <span className="min-w-0">
+                          <span className="block font-medium truncate">{a.name || a.code}</span>
+                          <span className="block text-micro text-ink-faint tnum">
+                            {a.code}
+                            {a.platform ? ` · ${a.platform}` : ''}
+                            {a.shares ? ` · ${fmtNum(a.shares)} 份` : ''}
+                          </span>
+                        </span>
+                        <span className="text-right shrink-0">
+                          <span className="block font-medium tnum">¥{fmtMoney(mv, 0)}</span>
+                          {hasEst ? (
+                            <span
+                              className={`block text-micro font-semibold tnum ${
+                                pnl >= 0 ? 'text-up' : 'text-down'
+                              }`}
+                            >
+                              {pnl >= 0 ? '+' : ''}¥{fmtMoney(pnl, 0)}（
+                              {pnl >= 0 ? '+' : ''}
+                              {fmtNum(pct, 2)}%）
+                            </span>
+                          ) : (
+                            <span className="block text-micro text-ink-faint tnum">
+                              成本 ¥{fmtMoney(a.cost_amount || 0, 0)}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    </li>
+                    )
+                  })}
               </ul>
             )}
           </Card>
