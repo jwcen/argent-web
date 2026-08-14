@@ -27,6 +27,8 @@ import {
   Brain,
   Globe,
   Coins,
+  ChartBar,
+  Lightbulb,
 } from '@phosphor-icons/react'
 import { ask, streamAsk, type ToolEvent, ApiError } from '../lib/api'
 import { useApi } from '../lib/useApi'
@@ -61,6 +63,11 @@ const TOOL_META: Record<string, { label: string; Icon: typeof MagnifyingGlass }>
   get_trades: { label: '读取成交记录', Icon: ListBullets },
   get_thesis: { label: '读取买入逻辑', Icon: Brain },
   get_market_indices: { label: '查大盘指数', Icon: Globe },
+  get_sector_momentum: { label: '查行业板块榜', Icon: ChartBar },
+  get_hot_concepts: { label: '查概念热点', Icon: Lightbulb },
+  get_board_stocks: { label: '查板块成分股', Icon: ListBullets },
+  get_market_sentiment: { label: '查市场情绪', Icon: ChartLine },
+  get_global_indices: { label: '查海外指数', Icon: Globe },
 }
 
 // 从工具参数 JSON 里抽出关键值做一行预览（query/code/stocks/codes/start/end 等）。
