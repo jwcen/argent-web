@@ -89,6 +89,8 @@ export default function Portfolio() {
   // 账户管理
   const [accountModalOpen, setAccountModalOpen] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
+  const [pendingAccountDelete, setPendingAccountDelete] = useState<Account | null>(null)
+  const [deletingAccount, setDeletingAccount] = useState(false)
 
   const load = () => {
     void api(() => portfolio.listHoldings(activeAccount))
@@ -107,6 +109,22 @@ export default function Portfolio() {
   const selectAccount = (id: number | null) => {
     setActiveAccount(id)
     updateSettings({ defaultAccount: id })
+  }
+
+  const confirmDeleteAccount = async () => {
+    if (!pendingAccountDelete) return
+    setDeletingAccount(true)
+    try {
+      await api(() => accountApi.remove(pendingAccountDelete.id))
+      toast.success('账户已删除')
+      if (activeAccount === pendingAccountDelete.id) selectAccount(null)
+      load()
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : '删除失败')
+    } finally {
+      setDeletingAccount(false)
+      setPendingAccountDelete(null)
+    }
   }
 
   const totalCost = useMemo(
@@ -138,6 +156,17 @@ export default function Portfolio() {
     [holdings, quotes],
   )
   const hasQuote = useMemo(() => (holdings ?? []).some((h) => quotes[h.stock_code]), [holdings, quotes])
+
+  // 今日盈亏 = Σ((现价-昨收) × 持仓股数)
+  const todayPnl = useMemo(
+    () =>
+      (holdings ?? []).reduce((s, h) => {
+        const q = quotes[h.stock_code]
+        if (!q) return s
+        return s + (q.price - q.prev_close) * h.shares
+      }, 0),
+    [holdings, quotes],
+  )
 
   const toggle = (code: string) => {
     setExpanded((cur) => {
@@ -176,53 +205,44 @@ export default function Portfolio() {
   }
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title={view === 'funds' ? '基金持仓' : '持仓'}
-        description={
-          view === 'funds'
-            ? '场外基金、理财、黄金等统一记账；截图导入快速录持仓。'
-            : '每一笔流水都会自动重算持仓成本，账本本身就是唯一真相源。'
-        }
-        action={
-          view === 'stocks' ? (
-            <Button icon={<Plus size={18} weight="bold" />} onClick={() => openAdd()}>
-              记一笔交易
+    <div className="space-y-4">
+      {/* ===== 顶栏：标题 + 操作 + 视图切换 ===== */}
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-title-1 font-bold tracking-tight">
+          {view === 'funds' ? '基金持仓' : '持仓'}
+        </h1>
+        <div className="flex items-center gap-2 shrink-0">
+          {view === 'stocks' && (
+            <Button icon={<Plus size={18} weight="bold" />} onClick={() => openAdd()} size="sm">
+              记一笔
             </Button>
-          ) : undefined
-        }
-      />
-
-      {/* A股 / 基金 视图切换 */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => switchView('stocks')}
-          aria-pressed={view === 'stocks'}
-          className={`min-h-10 px-5 rounded-full text-caption font-semibold transition-colors ${
-            view === 'stocks' ? 'bg-accent text-white' : 'bg-surface-2 text-ink-soft hover:bg-surface-2/80'
-          }`}
-        >
-          A股
-        </button>
-        <button
-          onClick={() => switchView('funds')}
-          aria-pressed={view === 'funds'}
-          className={`min-h-10 px-5 rounded-full text-caption font-semibold transition-colors ${
-            view === 'funds' ? 'bg-accent text-white' : 'bg-surface-2 text-ink-soft hover:bg-surface-2/80'
-          }`}
-        >
-          基金
-        </button>
+          )}
+          <button
+            onClick={() => switchView('stocks')}
+            aria-pressed={view === 'stocks'}
+            className={`min-h-9 px-4 rounded-full text-caption font-semibold transition-colors ${
+              view === 'stocks' ? 'bg-accent text-white' : 'bg-surface-2 text-ink-soft hover:bg-surface-2/80'
+            }`}
+          >
+            A股
+          </button>
+          <button
+            onClick={() => switchView('funds')}
+            aria-pressed={view === 'funds'}
+            className={`min-h-9 px-4 rounded-full text-caption font-semibold transition-colors ${
+              view === 'funds' ? 'bg-accent text-white' : 'bg-surface-2 text-ink-soft hover:bg-surface-2/80'
+            }`}
+          >
+            基金
+          </button>
+        </div>
       </div>
 
-      {view === 'funds' ? (
-        <AssetsView />
-      ) : (
-        <>
-      {/* 账户 Tab 栏：全部 / 各自定义账户 */}
-      {accounts.length > 0 && (
+      {/* 账户 Tab 栏：仅基金视图需要分类 */}
+      {view === 'funds' && accounts.length > 0 && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           <button
+            type="button"
             onClick={() => selectAccount(null)}
             className={`shrink-0 px-4 py-2 rounded-full text-caption font-medium transition-colors ${
               activeAccount === null
@@ -233,19 +253,30 @@ export default function Portfolio() {
             全部
           </button>
           {accounts.map((a) => (
-            <button
-              key={a.id}
-              onClick={() => selectAccount(a.id)}
-              className={`shrink-0 px-4 py-2 rounded-full text-caption font-medium transition-colors ${
-                activeAccount === a.id
-                  ? 'bg-accent text-white'
-                  : 'bg-surface-2 text-ink-soft hover:bg-surface-2/80'
-              }`}
-            >
-              {a.name}
-            </button>
+            <div key={a.id} className="group relative shrink-0">
+              <button
+                type="button"
+                onClick={() => selectAccount(a.id)}
+                className={`flex items-center gap-1 pl-4 pr-7 py-2 rounded-full text-caption font-medium transition-colors ${
+                  activeAccount === a.id
+                    ? 'bg-accent text-white'
+                    : 'bg-surface-2 text-ink-soft hover:bg-surface-2/80'
+                }`}
+              >
+                {a.name}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setPendingAccountDelete(a) }}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-danger/90 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px] leading-none"
+                title={`删除「${a.name}」`}
+              >
+                ×
+              </button>
+            </div>
           ))}
           <button
+            type="button"
             onClick={() => { setEditingAccount(null); setAccountModalOpen(true) }}
             className="shrink-0 min-h-9 px-3 py-2 rounded-full text-caption font-medium text-accent border border-dashed border-line hover:border-accent/50 transition-colors"
           >
@@ -254,49 +285,64 @@ export default function Portfolio() {
         </div>
       )}
 
-      {/* 汇总条：移动端也能一眼看到总量，不用往回滚 */}
+      {view === 'funds' ? (
+        <AssetsView />
+      ) : (
+        <>
+      {/* ===== A股视图 ===== */}
+
+      {/* 汇总条：一行关键指标，对齐老版顶栏风格 */}
       {holdings && holdings.length > 0 && (
-        <Reveal delay={0.05}>
-          <div className="flex flex-wrap items-baseline gap-x-8 gap-y-3 rounded-tile bg-surface ring-card shadow-card px-5 py-4">
-            <div>
-              <p className="text-micro text-ink-faint">持仓成本合计</p>
-              <p className="mt-0.5 text-title-2 font-semibold tnum leading-none">
-                ¥{fmtMoney(totalCost, 0)}
-              </p>
-            </div>
-            <div>
-              <p className="text-micro text-ink-faint">{hasQuote ? '持仓市值' : '持仓市值（成本口径）'}</p>
-              <p className="mt-0.5 text-title-2 font-semibold tnum leading-none">
-                ¥{fmtMoney(totalMarketValue, 0)}
-              </p>
-            </div>
-            {hasQuote && totalCost > 0 && (
-              <div>
-                <p className="text-micro text-ink-faint">浮动盈亏</p>
-                <p
-                  className={`mt-0.5 text-title-2 font-semibold tnum leading-none ${
-                    totalMarketValue - totalCost >= 0 ? 'text-up' : 'text-down'
-                  }`}
-                >
-                  {totalMarketValue - totalCost >= 0 ? '+' : ''}¥
-                  {fmtMoney(totalMarketValue - totalCost, 0)}
-                </p>
-              </div>
-            )}
-            <div>
-              <p className="text-micro text-ink-faint">标的数量</p>
-              <p className="mt-0.5 text-title-2 font-semibold tnum leading-none">
-                {holdings.length}
-              </p>
-            </div>
+        <Reveal delay={0.03}>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            <Metric label="总资产" value={`¥${fmtMoney(totalMarketValue, 0)}`} highlight />
+            <Metric label="持仓成本" value={`¥${fmtMoney(totalCost, 0)}`} />
+            <Metric
+              label="浮动盈亏"
+              value={`${totalMarketValue - totalCost >= 0 ? '+' : ''}¥${fmtMoney(totalMarketValue - totalCost, 0)}`}
+              valueClass={totalMarketValue - totalCost >= 0 ? 'text-up' : 'text-down'}
+              sub={totalCost > 0 ? `${totalMarketValue - totalCost >= 0 ? '+' : ''}${fmtNum(((totalMarketValue - totalCost) / totalCost) * 100, 2)}%` : undefined}
+            />
+            <Metric label="标的数" value={String(holdings.length)} />
             {totalDividend > 0 && (
+              <Metric label="累计分红" value={`¥${fmtMoney(totalDividend, 0)}`} valueClass="text-up" />
+            )}
+            {hasQuote && (
+              <Metric
+                label="今日盈亏"
+                value={fmtMoney(todayPnl, 0)}
+                valueClass={todayPnl >= 0 ? 'text-up' : 'text-down'}
+              />
+            )}
+          </div>
+        </Reveal>
+      )}
+
+      {/* 总览卡：左侧核心数字 + 右侧资产配置环形图 */}
+      {holdings && holdings.length > 0 && (
+        <Reveal delay={0.06}>
+          <div className="rounded-tile bg-surface ring-card shadow-card p-5 sm:p-6 flex flex-col sm:flex-row items-start gap-6">
+            {/* 左侧：核心数字 */}
+            <div className="flex-1 min-w-0 space-y-4">
               <div>
-                <p className="text-micro text-ink-faint">累计分红</p>
-                <p className="mt-0.5 text-title-2 font-semibold tnum leading-none text-up">
-                  ¥{fmtMoney(totalDividend, 0)}
+                <p className="text-micro text-ink-faint">持仓总览</p>
+                <div className="mt-1 flex items-baseline gap-3">
+                  <span className="text-display font-bold tnum">¥{fmtMoney(totalMarketValue, 0)}</span>
+                  {totalCost > 0 && (
+                    <span className={`text-caption font-semibold tnum ${totalMarketValue - totalCost >= 0 ? 'text-up' : 'text-down'}`}>
+                      {totalMarketValue - totalCost >= 0 ? '+' : ''}¥{fmtMoney(totalMarketValue - totalCost, 0)}
+                      {' '}({totalMarketValue - totalCost >= 0 ? '+' : ''}{fmtNum(((totalMarketValue - totalCost) / totalCost) * 100, 2)}%)
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-micro text-ink-soft tnum">
+                  成本 ¥{fmtMoney(totalCost, 0)} · 标的 {holdings.length} 只
                 </p>
               </div>
-            )}
+            </div>
+
+            {/* 右侧：资产配置环形图 */}
+            <AllocationDonut holdings={holdings} quotes={quotes} totalMarketValue={totalMarketValue} />
           </div>
         </Reveal>
       )}
@@ -320,7 +366,18 @@ export default function Portfolio() {
           />
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="rounded-tile bg-surface ring-card shadow-card overflow-hidden">
+          {/* 表头 */}
+          <div className="hidden sm:grid grid-cols-12 gap-2 px-4 py-2.5 bg-surface-2/60 text-[11px] text-ink-faint font-medium border-b border-line-soft">
+            <span className="col-span-3">名称 / 代码</span>
+            <span className="col-span-2 text-right">持仓市值</span>
+            <span className="col-span-2 text-right">成本</span>
+            <span className="col-span-1 text-right">盈亏</span>
+            <span className="col-span-1 text-right">今日</span>
+            <span className="col-span-1 text-right">仓位</span>
+            <span className="col-span-2 text-right">操作</span>
+          </div>
+
           {holdings.map((h, i) => {
             const open = expanded === h.stock_code
             const list = actions[h.stock_code]
@@ -329,131 +386,137 @@ export default function Portfolio() {
             const marketValue = q ? q.price * h.shares : costValue
             const pnl = q ? marketValue - costValue : 0
             const pnlPct = q && costValue > 0 ? (pnl / costValue) * 100 : 0
+            const todayChange = q ? ((q.price - q.prev_close) / q.prev_close) * 100 : 0
+            const todayVal = q ? (q.price - q.prev_close) * h.shares : 0
+            const posPct = totalMarketValue > 0 ? (marketValue / totalMarketValue) * 100 : 0
+
             return (
-              <Reveal key={h.id} delay={Math.min(i * 0.04, 0.2)}>
-                <Card padded={false} className="overflow-hidden">
-                  {/* 折叠头：整行可点，高度远超 44px 触摸目标 */}
+              <Reveal key={h.id} delay={Math.min(i * 0.03, 0.15)}>
+                <div className={`${open ? 'bg-accent/5' : ''}`}>
                   <button
                     onClick={() => toggle(h.stock_code)}
                     aria-expanded={open}
-                    className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left
-                               transition-colors hover:bg-surface-2/60 active:bg-surface-2"
+                    className="w-full grid grid-cols-12 gap-2 px-4 py-3 text-left items-center transition-colors hover:bg-surface-2/40 active:bg-surface-2 sm:grid-cols-12"
                   >
-                    <span className="min-w-0">
-                      <span className="flex items-center gap-2">
-                        <span className="font-semibold truncate">
-                          {h.stock_name || h.stock_code}
-                        </span>
-                        <span className="text-micro text-ink-faint tnum shrink-0">
-                          {h.stock_code}
-                        </span>
-                      </span>
-                      <span className="mt-1 block text-micro text-ink-soft tnum">
-                        {fmtNum(h.shares)} 股 · 成本 {fmtMoney(h.cost_price)}
-                        {q ? ` · 现价 ${fmtMoney(q.price)}` : ''}
-                        {h.broker ? ` · ${h.broker}` : ''}
-                      </span>
-
-                      {/* 分红痕迹：成本被摊薄过、或收到过现金分红，都要说清楚，
-                          否则用户看到"成本比我买入价低"会以为是 bug。 */}
+                    {/* 名称+代码 */}
+                    <div className="col-span-12 sm:col-span-3 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-sm truncate">{h.stock_name || h.stock_code}</span>
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-2 text-[11px] text-ink-faint">
+                        <span className="tnum">{h.stock_code}</span>
+                        {q && (
+                          <span className={`tnum ${todayChange >= 0 ? 'text-up' : 'text-down'}`}>
+                            {todayChange >= 0 ? '+' : ''}{fmtNum(todayChange, 2)}%
+                          </span>
+                        )}
+                      </div>
                       {((h.dividend_per_share ?? 0) > 0 || (h.income_realized ?? 0) > 0) && (
-                        <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <div className="mt-1 flex flex-wrap gap-x-2">
                           {(h.dividend_per_share ?? 0) > 0 && (
-                            <span
-                              className="text-micro text-up tnum"
-                              title={`原始成本 ${fmtMoney(h.cost_price_raw ?? 0)}，累计每股派息 ${fmtMoney(
-                                h.dividend_per_share ?? 0,
-                              )}，摊薄后 ${fmtMoney(h.cost_price)}`}
-                            >
+                            <span className="text-[10px] text-up tnum" title={`原始成本 ${fmtMoney(h.cost_price_raw ?? 0)}，摊薄后 ${fmtMoney(h.cost_price)}`}>
                               除权摊薄 −{fmtMoney(h.dividend_per_share ?? 0)}/股
                             </span>
                           )}
                           {(h.income_realized ?? 0) > 0 && (
-                            <span className="text-micro text-up tnum">
-                              已收分红 ¥{fmtMoney(h.income_realized ?? 0, 0)}
-                            </span>
+                            <span className="text-[10px] text-up tnum">已收分红 ¥{fmtMoney(h.income_realized ?? 0, 0)}</span>
                           )}
-                        </span>
+                        </div>
                       )}
-                    </span>
+                    </div>
 
-                    <span className="flex items-center gap-3 shrink-0">
-                      <span className="text-right">
-                        <span className="block font-semibold tnum">
-                          ¥{fmtMoney(marketValue, 0)}
-                        </span>
-                        <span className="block text-micro text-ink-faint">
-                          {q ? '市值' : '市值成本'}
-                        </span>
-                        {q ? (
-                          <span
-                            className={`mt-0.5 block text-micro font-semibold tnum ${
-                              pnl >= 0 ? 'text-up' : 'text-down'
-                            }`}
-                          >
-                            {pnl >= 0 ? '+' : ''}¥{fmtMoney(pnl, 0)}（
-                            {pnl >= 0 ? '+' : ''}
-                            {fmtNum(pnlPct, 2)}%）
+                    {/* 市值 */}
+                    <div className="hidden sm:flex col-span-2 flex-col items-end justify-center">
+                      <span className="text-sm font-semibold tnum">¥{fmtMoney(marketValue, 0)}</span>
+                      <span className="text-[10px] text-ink-faint tnum">{fmtNum(h.shares, 0)}股</span>
+                    </div>
+
+                    {/* 成本 */}
+                    <div className="hidden sm:flex col-span-2 flex-col items-end justify-center">
+                      <span className="text-sm tnum">¥{fmtMoney(costValue, 0)}</span>
+                      <span className="text-[10px] text-ink-faint tnum">@{fmtMoney(h.cost_price)}</span>
+                    </div>
+
+                    {/* 盈亏 */}
+                    <div className="hidden sm:flex col-span-1 flex-col items-end justify-center">
+                      {q ? (
+                        <>
+                          <span className={`text-sm font-semibold tnum ${pnl >= 0 ? 'text-up' : 'text-down'}`}>
+                            {pnl >= 0 ? '+' : ''}{fmtNum(pnlPct, 1)}%
                           </span>
-                        ) : (
-                          <span className="mt-0.5 block text-micro text-ink-faint">暂无行情</span>
-                        )}
-                      </span>
-                      <CaretDown
-                        size={18}
-                        className={`text-ink-faint transition-transform duration-300 ${
-                          open ? 'rotate-180' : ''
-                        }`}
-                      />
-                    </span>
+                          <span className={`text-[10px] tnum ${pnl >= 0 ? 'text-up' : 'text-down'}`}>
+                            {pnl >= 0 ? '+' : ''}¥{fmtMoney(pnl, 0)}
+                          </span>
+                        </>
+                      ) : <span className="text-[10px] text-ink-faint">—</span>}
+                    </div>
+
+                    {/* 今日 */}
+                    <div className="hidden sm:flex col-span-1 flex-col items-end justify-center">
+                      {q ? (
+                        <span className={`text-sm font-medium tnum ${todayVal >= 0 ? 'text-up' : 'text-down'}`}>
+                          {todayVal >= 0 ? '+' : ''}¥{fmtMoney(todayVal, 0)}
+                        </span>
+                      ) : <span className="text-[10px] text-ink-faint">—</span>}
+                    </div>
+
+                    {/* 仓位 */}
+                    <div className="hidden sm:flex col-span-1 flex-col items-end justify-center">
+                      <span className="text-sm tnum">{fmtNum(posPct, 1)}%</span>
+                      <div className="mt-1 w-full h-1 rounded-full bg-surface-2 overflow-hidden">
+                        <div className="h-full rounded-full bg-accent/60" style={{ width: `${Math.min(posPct, 100)}%` }} />
+                      </div>
+                    </div>
+
+                    {/* 操作 */}
+                    <div className="hidden sm:flex col-span-2 items-center justify-end gap-2">
+                      <CaretDown size={16} className={`text-ink-faint transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+                    </div>
+
+                    {/* 移动端汇总 */}
+                    <div className="flex sm:hidden col-span-12 items-center justify-between mt-1 pt-2 border-t border-line-soft/50">
+                      <div className="flex gap-4">
+                        <div><p className="text-[10px] text-ink-faint">市值</p><p className="text-sm font-semibold tnum">¥{fmtMoney(marketValue, 0)}</p></div>
+                        <div><p className="text-[10px] text-ink-faint">盈亏</p><p className={`text-sm font-semibold tnum ${pnl >= 0 ? 'text-up' : 'text-down'}`}>{q ? `${pnl >= 0 ? '+' : ''}${fmtNum(pnlPct, 1)}%` : '—'}</p></div>
+                        <div><p className="text-[10px] text-ink-faint">仓位</p><p className="text-sm tnum">{fmtNum(posPct, 1)}%</p></div>
+                      </div>
+                      <CaretDown size={16} className={`text-ink-faint transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+                    </div>
                   </button>
 
-                  {/* 展开区：高度动画用 grid-rows 技巧，避免测量 DOM 高度 */}
+                  {/* 展开区 */}
                   <AnimatePresence initial={false}>
                     {open && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                        className="overflow-hidden"
-                      >
-                        <div className="border-t border-line-soft px-4 sm:px-5 py-3 bg-surface-2/40">
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }} className="overflow-hidden">
+                        <div className="border-t border-line-soft px-4 py-3 bg-surface-2/30 space-y-3">
+                          <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
+                            <span className="text-ink-faint">现价 <b className="text-ink tnum">{q ? fmtMoney(q.price) : '—'}</b></span>
+                            <span className="text-ink-faint">成本价 <b className="text-ink tnum">{fmtMoney(h.cost_price)}</b></span>
+                            <span className="text-ink-faint">持仓 <b className="text-ink tnum">{fmtNum(h.shares, 0)} 股</b></span>
+                            {h.broker && <span className="text-ink-faint">券商 <b className="text-ink">{h.broker}</b></span>}
+                          </div>
                           {loadingCode === h.stock_code ? (
-                            <Skeleton className="h-16 rounded-tile" />
+                            <Skeleton className="h-14 rounded-tile" />
                           ) : (list ?? []).length === 0 ? (
-                            <p className="py-3 text-caption text-ink-soft">该持仓暂无流水记录。</p>
+                            <p className="py-2 text-caption text-ink-soft">该持仓暂无流水记录。</p>
                           ) : (
-                            <ul>
+                            <ul className="divide-y divide-line-soft/50">
                               {(list ?? []).map((a) => (
-                                <ActionRow
-                                  key={a.id}
-                                  action={a}
-                                  onDelete={() =>
-                                    setPendingDelete({ code: h.stock_code, action: a })
-                                  }
-                                />
+                                <ActionRow key={a.id} action={a} onDelete={() => setPendingDelete({ code: h.stock_code, action: a })} />
                               ))}
                             </ul>
                           )}
-
-                          <button
-                            onClick={() => openAdd(h.stock_code)}
-                            className="mt-2 min-h-11 inline-flex items-center gap-1.5 px-1 text-caption text-accent font-medium"
-                          >
-                            <Plus size={15} weight="bold" /> 给 {h.stock_code} 添加流水
-                          </button>
-
-                          <DividendPanel
-                            code={h.stock_code}
-                            suppressed={(h.income_realized ?? 0) > 0}
-                            onChanged={load}
-                          />
+                          <div className="flex items-center gap-3 pt-1">
+                            <button onClick={() => openAdd(h.stock_code)} className="min-h-9 inline-flex items-center gap-1.5 px-3 text-caption text-accent font-medium rounded-lg hover:bg-accent/10 transition-colors">
+                              <Plus size={14} weight="bold" /> 添加流水
+                            </button>
+                          </div>
+                          <DividendPanel code={h.stock_code} suppressed={(h.income_realized ?? 0) > 0} onChanged={load} />
                         </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
-                </Card>
+                </div>
               </Reveal>
             )
           })}
@@ -488,6 +551,19 @@ export default function Portfolio() {
         }
         onCancel={() => setPendingDelete(null)}
         onConfirm={confirmDelete}
+      />
+
+      <ConfirmDialog
+        open={!!pendingAccountDelete}
+        busy={deletingAccount}
+        title="删除账户？"
+        description={
+          pendingAccountDelete
+            ? `确定删除「${pendingAccountDelete.name}」？关联的持仓会变为未归类。`
+            : undefined
+        }
+        onCancel={() => setPendingAccountDelete(null)}
+        onConfirm={confirmDeleteAccount}
       />
 
       <AccountModal
@@ -930,6 +1006,119 @@ function AddActionModal({
         </div>
       </form>
     </Modal>
+  )
+}
+
+/* ──────────────── 子组件 ──────────────── */
+
+/** 汇总条单个指标 */
+function Metric({
+  label,
+  value,
+  valueClass,
+  sub,
+  highlight,
+}: {
+  label: string
+  value: string
+  valueClass?: string
+  sub?: string
+  highlight?: boolean
+}) {
+  return (
+    <div className={`rounded-lg px-3 py-2.5 ${highlight ? 'bg-accent/10 ring-1 ring-accent/20' : 'bg-surface-2/60'}`}>
+      <p className="text-[11px] text-ink-faint leading-none">{label}</p>
+      <p className={`mt-1 text-sm font-semibold tnum leading-tight ${valueClass ?? (highlight ? 'text-accent' : '')}`}>
+        {value}
+      </p>
+      {sub && <p className={`mt-0.5 text-[11px] tnum leading-none ${valueClass ?? ''}`}>{sub}</p>}
+    </div>
+  )
+}
+
+/** 资产配置环形图（纯 SVG，无依赖） */
+function AllocationDonut({
+  holdings,
+  quotes,
+  totalMarketValue,
+}: {
+  holdings: Holding[]
+  quotes: Record<string, Quote>
+  totalMarketValue: number
+}) {
+  // 按持仓市值算占比；无报价的用成本兜底
+  const segments = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const h of holdings) {
+      const q = quotes[h.stock_code]
+      const v = q ? q.price * h.shares : h.shares * h.cost_price
+      // 简单分类：含 "ETF" 或基金代码(5/6开头) → 基金，其余 → 股票
+      const kind = /^[56]/.test(h.stock_code) || h.stock_name?.includes('ETF') ? 'fund' : 'stock'
+      map.set(kind, (map.get(kind) ?? 0) + v)
+    }
+    const stock = map.get('stock') ?? 0
+    const fund = map.get('fund') ?? 0
+    const cash = Math.max(0, totalMarketValue - stock - fund)
+    const total = stock + fund + cash || 1
+    return [
+      { label: '股票', value: stock, pct: stock / total, color: '#3b82f6' },
+      { label: '基金', value: fund, pct: fund / total, color: '#8b5cf6' },
+      { label: '现金', value: cash, pct: cash / total, color: '#6b7280' },
+    ].filter((s) => s.pct > 0.005)
+  }, [holdings, quotes, totalMarketValue])
+
+  const size = 120
+  const cx = size / 2
+  const cy = size / 2
+  const r = size * 0.36
+  const gap = 3
+
+  let accum = -90 // 从顶部开始
+  const paths = segments.map((s) => {
+    const span = s.pct * 360
+    const start = accum
+    const end = accum + span
+    accum = end
+    const largeArc = span > 180 ? 1 : 0
+    const radStart = ((start + gap / 2) * Math.PI) / 180
+    const radEnd = ((end - gap / 2) * Math.PI) / 180
+    const x1 = cx + r * Math.cos(radStart)
+    const y1 = cy + r * Math.sin(radStart)
+    const x2 = cx + r * Math.cos(radEnd)
+    const y2 = cy + r * Math.sin(radEnd)
+    return { ...s, d: `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z` }
+  })
+
+  return (
+    <div className="shrink-0 flex flex-col items-center gap-2">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {/* 底环 */}
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="currentColor" strokeWidth={22} className="text-surface-2" />
+        {/* 扇区 */}
+        {paths.map((p) => (
+          <path key={p.label} d={p.d} fill={p.color} opacity={0.9} />
+        ))}
+        {/* 内圆（挖空成环形） */}
+        <circle cx={cx} cy={cy} r={r - 14} fill="var(--color-surface)" />
+        {/* 中心文字 */}
+        <text x={cx} y={cy - 4} textAnchor="middle" className="fill-current text-[13px] font-bold tnum" style={{ fill: 'var(--color-ink)' }}>
+          ¥{fmtMoney(totalMarketValue, 0)}
+        </text>
+        <text x={cx} y={cy + 14} textAnchor="middle" className="fill-current text-[10px]" style={{ fill: 'var(--color-ink-faint)' }}>
+          总资产
+        </text>
+      </svg>
+      {/* 图例 */}
+      <div className="flex flex-wrap justify-center gap-x-4 gap-y-1">
+        {segments.map((s) => (
+          <span key={s.label} className="flex items-center gap-1 text-[11px] text-ink-soft">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+            <span>{s.label}</span>
+            <span className="tnum font-medium text-ink">{fmtNum(s.pct * 100, 1)}%</span>
+          </span>
+        ))}
+      </div>
+    </div>
   )
 }
 
