@@ -257,3 +257,66 @@ export interface Curve {
   metrics: CurveMetrics
   note?: string
 }
+
+// ── 策略栏（诚实版：中性参考 + 账本复盘）──
+export interface IndicatorSnapshot {
+  ma20: number
+  ma60: number
+  ma120: number
+  ma250: number
+  macd: { dif: number; dea: number; hist: number }
+  rsi: number
+  kdj: { k: number; d: number; j: number }
+}
+
+export interface SignalItem {
+  name: string
+  state: 'above' | 'below' | 'golden' | 'dead' | 'overbought' | 'oversold' | 'neutral'
+  text: string
+}
+
+export interface DecisionReview {
+  first_buy_date: string
+  holding_days: number
+  cost_price: number
+  last_close: number
+  pnl_pct: number
+  pnl_abs: number
+  shares: number
+}
+
+export interface StrategyReport {
+  code: string
+  name: string
+  last_close: number
+  indicators: IndicatorSnapshot
+  signals: SignalItem[]
+  trend: 'up' | 'down' | 'sideways'
+  decision_review?: DecisionReview
+  disclaimer: string
+}
+
+export type BacktestStrategy = 'single_ma' | 'ma_cross' | 'consensus'
+
+export interface BacktestParams {
+  strategy: BacktestStrategy
+  ma_n?: number
+  ma_fast?: number
+  ma_slow?: number
+}
+
+export interface BacktestReport {
+  code: string
+  name: string
+  strategy: string
+  total_return: number
+  hold_return: number
+  excess: number
+  max_dd: number
+  win_rate: number
+  trades: number
+  time_in_market: number
+  curve_timing: number[]
+  curve_hold: number[]
+  note: string
+}

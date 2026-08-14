@@ -4,6 +4,8 @@ import type {
   AssetType,
   Account,
   AccountSummary,
+  BacktestParams,
+  BacktestReport,
   Broker,
   Curve,
   DCASchedule,
@@ -18,6 +20,7 @@ import type {
   Message,
   RealizedResult,
   Session,
+  StrategyReport,
   User,
   WatchlistItem,
 } from './types'
@@ -236,6 +239,17 @@ export const market = {
     get<Quote[]>(`/api/market/quote?codes=${codes.join(',')}`),
   funds: (codes: string[]) =>
     get<FundQuote[]>(`/api/market/funds?codes=${codes.join(',')}`),
+}
+
+// ── 策略栏（诚实版：中性参考 + 账本复盘）+ 回测 ──
+export const strategy = {
+  // 所有 A 股持仓的策略报告（策略栏数据源）
+  list: () => get<{ items: StrategyReport[] }>('/api/strategy'),
+  // 单只报告
+  one: (code: string) => get<StrategyReport>(`/api/strategy/${code}`),
+  // 对任意 A 股代码做均线择时回测
+  backtest: (payload: { code: string; name?: string } & BacktestParams) =>
+    post<BacktestReport>('/api/strategy/backtest', payload),
 }
 
 // ── 截图导入（LLM 识别 → 返回草稿，确认后走 assets/portfolio 创建）──

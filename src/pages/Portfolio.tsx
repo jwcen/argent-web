@@ -9,6 +9,7 @@ import { useSettings } from '../lib/settings'
 import { useToasts } from '../lib/toast'
 import type { Action, ActionType, Broker, DividendEvent, Holding, Quote, Account } from '../lib/types'
 import { AssetsView } from './Assets'
+import { StrategyView } from './Strategy'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input, Select } from '../components/ui/Input'
@@ -63,11 +64,12 @@ export default function Portfolio() {
   const toast = useToasts()
   const { settings, update: updateSettings } = useSettings()
 
-  // A股 / 基金 视图切换：读 URL ?view=funds（/assets 旧链接重定向到此）
+  // A股 / 基金 / 策略 视图切换：读 URL ?view=funds|strategy
   const [searchParams, setSearchParams] = useSearchParams()
-  const view = searchParams.get('view') === 'funds' ? 'funds' : 'stocks'
-  const switchView = (v: 'stocks' | 'funds') => {
-    setSearchParams(v === 'funds' ? { view: 'funds' } : {}, { replace: true })
+  const rawView = searchParams.get('view')
+  const view: 'stocks' | 'funds' | 'strategy' = rawView === 'funds' ? 'funds' : rawView === 'strategy' ? 'strategy' : 'stocks'
+  const switchView = (v: 'stocks' | 'funds' | 'strategy') => {
+    setSearchParams(v === 'stocks' ? {} : { view: v }, { replace: true })
   }
 
   const [holdings, setHoldings] = useState<Holding[] | null>(null)
@@ -209,7 +211,7 @@ export default function Portfolio() {
       {/* ===== 顶栏：标题 + 操作 + 视图切换 ===== */}
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-title-1 font-bold tracking-tight">
-          {view === 'funds' ? '基金持仓' : '持仓'}
+          {view === 'funds' ? '基金持仓' : view === 'strategy' ? '策略' : '持仓'}
         </h1>
         <div className="flex items-center gap-2 shrink-0">
           {view === 'stocks' && (
@@ -234,6 +236,15 @@ export default function Portfolio() {
             }`}
           >
             基金
+          </button>
+          <button
+            onClick={() => switchView('strategy')}
+            aria-pressed={view === 'strategy'}
+            className={`min-h-9 px-4 rounded-full text-caption font-semibold transition-colors ${
+              view === 'strategy' ? 'bg-accent text-white' : 'bg-surface-2 text-ink-soft hover:bg-surface-2/80'
+            }`}
+          >
+            策略
           </button>
         </div>
       </div>
@@ -285,7 +296,9 @@ export default function Portfolio() {
         </div>
       )}
 
-      {view === 'funds' ? (
+      {view === 'strategy' ? (
+        <StrategyView />
+      ) : view === 'funds' ? (
         <AssetsView />
       ) : (
         <>
