@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { SignOut } from '@phosphor-icons/react'
+import { Gear, SignOut } from '@phosphor-icons/react'
 import { useAuth } from '../../lib/auth'
 import { nickname } from '../../lib/format'
 import { ThemeToggle } from '../ui/ThemeToggle'
@@ -10,7 +10,7 @@ import { NAV } from './nav'
  * 顶栏。桌面端承载主导航（胶囊 + 滑动指示器），
  * 移动端只保留品牌与操作 —— 导航下沉到底部 TabBar，符合拇指可达区。
  */
-export function TopBar() {
+export function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
@@ -22,7 +22,18 @@ export function TopBar() {
   return (
     <header className="sticky top-0 z-40 glass border-b border-glass-line pt-safe">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 h-14 md:h-16 flex items-center justify-between gap-3">
-        {/* min-h-11：品牌位也是可点链接，同样要满足 44px 触摸目标 */}
+        {/* 左侧：设置抽屉入口（滑出设置详情） */}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={onOpenSettings}
+            className="w-11 h-11 grid place-items-center rounded-full text-ink-soft hover:text-ink hover:bg-surface-2 transition-colors"
+            aria-label="打开设置"
+            title="设置"
+          >
+            <Gear size={20} weight="regular" />
+          </button>
+        </div>
+
         <NavLink
           to="/"
           className="flex items-center gap-2 shrink-0 min-h-11 pr-2 -ml-1 pl-1 rounded-full"

@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { TopBar } from './TopBar'
 import { TabBar } from './TabBar'
+import { SettingsDrawer } from './SettingsDrawer'
 
 /**
  * 应用外壳。
@@ -14,9 +15,11 @@ export function AppShell({
   children: ReactNode
   flush?: boolean
 }) {
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
   return (
     <div className="min-h-[100dvh] flex flex-col">
-      <TopBar />
+      <TopBar onOpenSettings={() => setSettingsOpen(true)} />
       <main
         className={
           flush
@@ -29,6 +32,7 @@ export function AppShell({
         {children}
       </main>
       <TabBar />
+      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   )
 }
