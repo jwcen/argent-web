@@ -60,6 +60,7 @@ const TOOL_META: Record<string, { label: string; Icon: typeof MagnifyingGlass }>
   get_asset_allocation: { label: '读取资产配置', Icon: Wallet },
   get_trades: { label: '读取成交记录', Icon: ListBullets },
   get_thesis: { label: '读取买入逻辑', Icon: Brain },
+  get_market_indices: { label: '查大盘指数', Icon: Globe },
 }
 
 // 从工具参数 JSON 里抽出关键值做一行预览（query/code/stocks/codes/start/end 等）。
