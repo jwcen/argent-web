@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { CaretDown, ListPlus, Plus, Trash } from '@phosphor-icons/react'
+import { CaretDown, ListPlus, Plus, Trash, ChartLine, ClockCounterClockwise, Info, PencilSimple } from '@phosphor-icons/react'
 import { useSearchParams } from 'react-router-dom'
 import { portfolio, brokers as brokerApi, accounts as accountApi, ApiError } from '../lib/api'
 import { useApi } from '../lib/useApi'
@@ -481,8 +481,36 @@ export default function Portfolio() {
                       </div>
                     </div>
 
-                    {/* 操作 */}
-                    <div className="hidden sm:flex col-span-2 items-center justify-end gap-2">
+                    {/* 操作：K线 / 历史 / 详情 / 编辑 + 展开箭头 */}
+                    <div className="hidden sm:flex col-span-2 items-center justify-end gap-1.5">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toast.info('K 线图开发中') }}
+                        className="min-h-7 px-2.5 rounded-full text-[11px] font-medium border border-line text-ink-soft hover:bg-surface-2 hover:border-accent/30 hover:text-accent transition-colors"
+                        title="K 线图"
+                      >
+                        K 线
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggle(h.stock_code) }}
+                        className="min-h-7 px-2.5 rounded-full text-[11px] font-medium border border-line text-ink-soft hover:bg-surface-2 hover:border-accent/30 hover:text-accent transition-colors"
+                        title="交易历史"
+                      >
+                        历史
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toast.info('个股详情开发中') }}
+                        className="min-h-7 px-2.5 rounded-full text-[11px] font-medium border border-line text-ink-soft hover:bg-surface-2 hover:border-accent/30 hover:text-accent transition-colors"
+                        title="详情"
+                      >
+                        详情
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openAdd(h.stock_code) }}
+                        className="min-h-7 px-2.5 rounded-full text-[11px] font-medium border border-line text-ink-soft hover:bg-surface-2 hover:border-accent/30 hover:text-accent transition-colors"
+                        title="编辑持仓"
+                      >
+                        编辑
+                      </button>
                       <CaretDown size={16} className={`text-ink-faint transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
                     </div>
 

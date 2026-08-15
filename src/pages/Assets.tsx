@@ -260,20 +260,49 @@ export function AssetsView() {
                         />
                       </span>
                     </button>
-                    <div className="flex items-center pr-2 shrink-0">
+                    {/* 操作：加仓 / 减仓 / 涨水 / 变幅 / 编辑 / 删除 */}
+                    <div className="flex items-center pr-2 shrink-0 gap-1.5">
                       <button
-                        onClick={() => setAssetModal({ open: true, editing: a })}
-                        className="w-11 h-11 grid place-items-center rounded-full text-ink-faint hover:text-accent hover:bg-accent/10"
-                        aria-label="编辑资产"
+                        onClick={(e) => { e.stopPropagation(); setLotModal({ open: true, asset: a, kind: 'add' }) }}
+                        className="min-h-7 px-2.5 rounded-full text-[11px] font-medium border border-line text-ink-soft hover:bg-surface-2 hover:border-accent/30 hover:text-accent transition-colors"
+                        title="加仓"
                       >
-                        <PencilSimple size={17} />
+                        加仓
                       </button>
                       <button
-                        onClick={() => setPendingDelete({ kind: 'asset', assetId: a.id })}
-                        className="w-11 h-11 grid place-items-center rounded-full text-ink-faint hover:text-danger hover:bg-danger/10"
-                        aria-label="删除资产"
+                        onClick={(e) => { e.stopPropagation(); setLotModal({ open: true, asset: a, kind: 'reduce' }) }}
+                        className="min-h-7 px-2.5 rounded-full text-[11px] font-medium border border-line text-ink-soft hover:bg-surface-2 hover:border-accent/30 hover:text-accent transition-colors"
+                        title="减仓"
                       >
-                        <Trash size={17} />
+                        减仓
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toast.info('分红记录开发中') }}
+                        className="min-h-7 px-2.5 rounded-full text-[11px] font-medium border border-line text-ink-soft hover:bg-surface-2 hover:border-accent/30 hover:text-accent transition-colors"
+                        title="涨水 / 分红"
+                      >
+                        涨水
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setAssetModal({ open: true, editing: a }) }}
+                        className="min-h-7 px-2.5 rounded-full text-[11px] font-medium border border-line text-ink-soft hover:bg-surface-2 hover:border-accent/30 hover:text-accent transition-colors"
+                        title="修改估值 / 变幅"
+                      >
+                        变幅
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setAssetModal({ open: true, editing: a }) }}
+                        className="min-h-7 px-2.5 rounded-full text-[11px] font-medium border border-line text-ink-soft hover:bg-surface-2 hover:border-accent/30 hover:text-accent transition-colors"
+                        title="编辑资产"
+                      >
+                        编辑
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setPendingDelete({ kind: 'asset', assetId: a.id }) }}
+                        className="min-h-7 px-2.5 rounded-full text-[11px] font-medium border border-line text-ink-soft hover:bg-surface-2 hover:border-danger/30 hover:text-danger transition-colors"
+                        title="删除资产"
+                      >
+                        删除
                       </button>
                     </div>
                   </div>
