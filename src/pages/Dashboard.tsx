@@ -253,7 +253,7 @@ export default function Dashboard() {
       {/* ── Hero ──────────────────────────────────────────────
           记忆点：一个大到近乎失礼的数字浮在漂移光晕上。
           全页只有这一处用 display 级字号，落差本身就是层级。 */}
-      <section className="relative -mx-4 sm:-mx-6 px-4 sm:px-6 pt-4 pb-8 sm:pt-8 sm:pb-12 overflow-hidden">
+      <section className="relative pt-4 pb-8 sm:pt-8 sm:pb-12 overflow-hidden">
         <Glow />
         <div className="relative">
           <p className="text-micro font-medium text-ink-faint tracking-wide">
@@ -324,7 +324,7 @@ export default function Dashboard() {
           移动端用横向 snap 滚动条，不挤压成两列小方块。 */}
       {liveIndices.length > 0 && (
         <Reveal>
-          <div className="-mx-4 sm:mx-0 px-4 sm:px-0 flex gap-3 overflow-x-auto no-scrollbar snap-x snap-mandatory">
+          <div className="flex gap-3 overflow-x-auto no-scrollbar snap-x snap-mandatory">
             {liveIndices.map((r, i) => {
               const up = r.pct >= 0
               return (
