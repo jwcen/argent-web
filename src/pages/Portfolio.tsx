@@ -279,7 +279,7 @@ export default function Portfolio() {
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setPendingAccountDelete(a) }}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-danger/90 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px] leading-none"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-danger/90 text-white flex items-center justify-center opacity-60 hover:opacity-100 active:opacity-100 transition-opacity text-[10px] leading-none"
                 title={`删除「${a.name}」`}
               >
                 ×
@@ -593,7 +593,10 @@ export default function Portfolio() {
         onCancel={() => setPendingDelete(null)}
         onConfirm={confirmDelete}
       />
+        </>
+      )}
 
+      {/* 账户管理弹窗（必须在视图条件外，基金页的账户 Tab 也要能弹出） */}
       <ConfirmDialog
         open={!!pendingAccountDelete}
         busy={deletingAccount}
@@ -616,8 +619,6 @@ export default function Portfolio() {
           load()
         }}
       />
-        </>
-      )}
     </div>
   )
 }
