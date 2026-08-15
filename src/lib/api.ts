@@ -20,6 +20,7 @@ import type {
   Message,
   RealizedResult,
   Session,
+  StockSuggest,
   StrategyReport,
   User,
   WatchlistItem,
@@ -239,6 +240,9 @@ export const market = {
     get<Quote[]>(`/api/market/quote?codes=${codes.join(',')}`),
   funds: (codes: string[]) =>
     get<FundQuote[]>(`/api/market/funds?codes=${codes.join(',')}`),
+  // 股票代码/名称模糊搜索（自动补全）
+  stockSearch: (keyword: string, limit = 10) =>
+    get<StockSuggest[]>(`/api/market/stock-search?keyword=${encodeURIComponent(keyword)}&limit=${limit}`),
 }
 
 // ── 策略栏（诚实版：中性参考 + 账本复盘）+ 回测 ──

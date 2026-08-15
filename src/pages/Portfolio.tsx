@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent, useRef, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { CaretDown, ListPlus, Plus, Trash, ChartLine, ClockCounterClockwise, Info, PencilSimple } from '@phosphor-icons/react'
+import { CaretDown, ListPlus, Plus, Trash, ChartLine, ClockCounterClockwise, Info, PencilSimple, MagnifyingGlass } from '@phosphor-icons/react'
 import { useSearchParams } from 'react-router-dom'
-import { portfolio, brokers as brokerApi, accounts as accountApi, ApiError } from '../lib/api'
+import { portfolio, brokers as brokerApi, accounts as accountApi, market as marketApi, ApiError } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { useQuotes } from '../lib/useQuotes'
 import { useSettings } from '../lib/settings'
 import { useToasts } from '../lib/toast'
-import type { Action, ActionType, Broker, DividendEvent, Holding, Quote, Account } from '../lib/types'
+import type { Action, ActionType, Broker, DividendEvent, Holding, Quote, Account, StockSuggest } from '../lib/types'
 import { AssetsView } from './Assets'
 import { StrategyView } from './Strategy'
 import { Card } from '../components/ui/Card'
@@ -830,6 +830,147 @@ function DividendPanel({
   )
 }
 
+// ── 股票代码自动补全输入框 ──
+
+function StockSearchInput({
+  value,
+  onChange,
+  error,
+}: {
+  value: string
+  onChange: (code: string) => void
+  error?: string
+}) {
+  const api = useApi()
+  const [keyword, setKeyword] = useState(value)
+  const [suggestions, setSuggestions] = useState<StockSuggest[]>([])
+  const [open, setOpen] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const [highlighted, setHighlighted] = useState(-1)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout>>()
+
+  // 同步外部 value 变化（如 presetCode 变了）
+  useEffect(() => { setKeyword(value) }, [value])
+
+  const doSearch = useCallback((kw: string) => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    if (!kw || kw.length < 1) {
+      setSuggestions([])
+      setOpen(false)
+      return
+    }
+    setSearching(true)
+    timerRef.current = setTimeout(async () => {
+      try {
+        const results = await api(() => marketApi.stockSearch(kw, 10))
+        setSuggestions(results ?? [])
+        setOpen(results != null && results.length > 0)
+      } catch {
+        setSuggestions([])
+        setOpen(false)
+      } finally {
+        setSearching(false)
+      }
+    }, 250)
+  }, [api])
+
+  // 点击外部关闭下拉
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  const select = (s: StockSuggest) => {
+    onChange(s.code)
+    setKeyword(s.code + ' ' + s.name)
+    setOpen(false)
+    setSuggestions([])
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!open || suggestions.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlighted(h => Math.min(h + 1, suggestions.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlighted(h => Math.max(h - 1, 0))
+    } else if (e.key === 'Enter' && highlighted >= 0) {
+      e.preventDefault()
+      select(suggestions[highlighted])
+    } else if (e.key === 'Escape') {
+      setOpen(false)
+    }
+  }
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <label className="block text-micro font-medium text-ink-soft mb-1.5">股票代码</label>
+      <div className="relative">
+        <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />
+        <input
+          type="text"
+          inputMode="search"
+          placeholder="输入代码或名称搜索，如 600519 或 茅台"
+          value={keyword}
+          onChange={e => {
+            const v = e.target.value
+            setKeyword(v)
+            onChange(v)
+            doSearch(v)
+          }}
+          onFocus={() => { if (suggestions.length > 0) setOpen(true) }}
+          onBlur={() => { /* 延迟关闭，让 click 事件先触发 */ setTimeout(() => setOpen(false), 150) }}
+          onKeyDown={handleKeyDown}
+          className={`w-full h-11 rounded-field border bg-surface px-9 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors ${
+            error ? 'border-danger' : 'border-line focus:border-accent focus:ring-1 focus:ring-accent/20'
+          }`}
+        />
+        {searching && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-ink-faint animate-pulse">搜索中...</span>
+        )}
+      </div>
+      {error && <p className="mt-1 text-micro text-danger">{error}</p>}
+
+      {/* 下拉候选列表 */}
+      <AnimatePresence>
+        {open && suggestions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.12 }}
+            className="absolute z-50 mt-1 w-full rounded-xl border border-line bg-surface shadow-lg shadow-black/8 max-h-60 overflow-auto"
+          >
+            {suggestions.map((s, i) => (
+              <button
+                key={s.code}
+                type="button"
+                onMouseEnter={() => setHighlighted(i)}
+                onClick={() => select(s)}
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition-colors ${
+                  i === highlighted ? 'bg-accent-soft' : 'hover:bg-surface-2'
+                }`}
+              >
+                <span className="tnum text-sm font-semibold text-ink min-w-[4.5rem]">{s.code}</span>
+                <span className="text-sm text-ink flex-1 truncate">{s.name}</span>
+                <span className="text-[11px] text-ink-faint font-mono">{s.market}</span>
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+// ── 记一笔交易弹窗 ──
 function AddActionModal({
   open,
   brokers,
@@ -919,14 +1060,10 @@ function AddActionModal({
   return (
     <Modal open={open} onClose={onClose} title="记一笔交易">
       <form onSubmit={submit} className="space-y-4" noValidate>
-        <Input
-          label="股票代码"
-          name="code"
-          inputMode="numeric"
-          placeholder="如 600519"
+        <StockSearchInput
           value={code}
+          onChange={setCode}
           error={errors.code}
-          onChange={(e) => setCode(e.target.value)}
         />
 
         <div>

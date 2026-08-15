@@ -233,6 +233,14 @@ export interface Quote {
   amplitude: number // 振幅 %
 }
 
+// 股票搜索建议（自动补全）
+export interface StockSuggest {
+  code: string // 6 位代码
+  name: string // 股票名称
+  pinyin?: string // 拼音首字母
+  market: string // SH / SZ / BJ
+}
+
 export interface ApiErrorShape {
   detail: string
 }
