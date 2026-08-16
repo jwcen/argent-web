@@ -11,6 +11,7 @@ import {
   Wallet,
 } from '@phosphor-icons/react'
 import { portfolio, market, assets as assetApi } from '../lib/api'
+import { classifyCategory } from '../lib/category'
 import { useApi } from '../lib/useApi'
 import { useQuotes } from '../lib/useQuotes'
 import { useAuth } from '../lib/auth'
@@ -187,21 +188,41 @@ export default function Dashboard() {
   )
   const totalPnL = totalMarketValue - totalCost
 
-  // 持仓分布：A 股 + 场外资产一起按成本口径排（场外未关闭的才算）
+  // 持仓分布：A 股 + 场外资产 按「板块分类」聚合（成本口径；场外未关闭的才算）。
+  // 先给每个标的打板块标签，再按板块求和，最后取前 N 名 + 其他。
   const slices = useMemo<Slice[]>(() => {
-    const stockSlices = (holdings ?? []).map((h) => ({
-      label: h.stock_name || h.stock_code,
-      value: h.shares * h.cost_price,
-    }))
-    const assetSlices = (assets ?? [])
-      .filter((a) => !a.closed)
-      .map((a) => ({ label: a.name || a.code, value: a.cost_amount || 0 }))
-    const sorted = [...stockSlices, ...assetSlices]
-      .filter((d) => d.value > 0)
+    const items: Slice[] = []
+    for (const h of holdings ?? []) {
+      const v = h.shares * h.cost_price
+      if (v > 0)
+        items.push({
+          label: classifyCategory({ assetType: 'STOCK', code: h.stock_code, name: h.stock_name }),
+          value: v,
+        })
+    }
+    for (const a of assets ?? []) {
+      if (a.closed) continue
+      const v = a.cost_amount || 0
+      if (v > 0)
+        items.push({
+          label: classifyCategory({ assetType: a.asset_type, code: a.code, name: a.name }),
+          value: v,
+        })
+    }
+    const byCat = new Map<string, number>()
+    for (const it of items) byCat.set(it.label, (byCat.get(it.label) ?? 0) + it.value)
+    const cats = [...byCat.entries()]
+      .map(([label, value]) => ({ label, value }))
       .sort((a, b) => b.value - a.value)
-    if (sorted.length <= 5) return sorted
-    const rest = sorted.slice(5).reduce((s, d) => s + d.value, 0)
-    return [...sorted.slice(0, 5), { label: '其他', value: rest }]
+
+    const MAX = 6
+    if (cats.length <= MAX) return cats
+    const rest = cats.slice(MAX).reduce((s, c) => s + c.value, 0)
+    const head = cats.slice(0, MAX)
+    const other = head.find((c) => c.label === '其他')
+    if (other) other.value += rest
+    else head.push({ label: '其他', value: rest })
+    return head
   }, [holdings, assets])
 
   // 净值曲线：TWR（起点 100）作主区，沪深300 基准作对比线（同为 100 起点可直接比）
@@ -443,7 +464,7 @@ export default function Dashboard() {
         <Reveal delay={0.1}>
           <Card className="h-full">
             <h2 className="text-title-3 font-semibold">持仓分布</h2>
-            <p className="mt-1 text-micro text-ink-faint">按成本口径</p>
+            <p className="mt-1 text-micro text-ink-faint">按板块 · 成本口径</p>
 
             {loading ? (
               <div className="mt-6 flex justify-center">
