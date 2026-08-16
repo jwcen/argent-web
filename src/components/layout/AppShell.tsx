@@ -26,7 +26,8 @@ export function AppShell({
             ? 'flex-1 flex flex-col min-h-0'
             : // pb-tabbar：移动端底部 Tab 是 fixed 的，必须补出等高留白，
               // 否则页面滚到底时最后一张卡片会被永久遮住。
-              'flex-1 mx-auto w-full max-w-6xl px-4 sm:px-6 py-6 sm:py-10 pb-tabbar md:pb-16'
+              // px-5/sm:px-8：边缘呼吸更舒服，避免 display 级数字贴边。
+              'flex-1 mx-auto w-full max-w-6xl px-5 sm:px-8 py-6 sm:py-10 pb-tabbar md:pb-16'
         }
       >
         {children}

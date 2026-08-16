@@ -274,7 +274,7 @@ export default function Dashboard() {
       {/* ── Hero ──────────────────────────────────────────────
           记忆点：一个大到近乎失礼的数字浮在漂移光晕上。
           全页只有这一处用 display 级字号，落差本身就是层级。 */}
-      <section className="relative pt-4 pb-8 sm:pt-8 sm:pb-12 overflow-hidden">
+      <section className="relative pt-4 pb-8 sm:pt-8 sm:pb-12">
         <Glow />
         <div className="relative">
           <p className="text-micro font-medium text-ink-faint tracking-wide">
