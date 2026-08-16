@@ -324,6 +324,7 @@ export type BacktestStrategy =
   | 'rsi'
   | 'macd'
   | 'breakout'
+  | 'grid'
 
 export interface BacktestParams {
   strategy: BacktestStrategy
@@ -337,6 +338,8 @@ export interface BacktestParams {
   rsi_overbought?: number
   break_n?: number
   break_vol?: number
+  grid_n?: number
+  grid_levels?: number
 }
 
 export interface TradeDetail {
@@ -406,4 +409,30 @@ export interface StockAnalysis {
   trigger: string
   risk: string
   raw?: string
+}
+
+// ── AI 分析历史 + 后验复盘 ──
+export interface AnalysisRecord {
+  id: number
+  code: string
+  name: string
+  direction: string
+  advice: string
+  trigger: string
+  risk: string
+  price_at: number
+  created_at: string
+  last_price: number
+  pnl_pct: number
+  verdict: 'correct' | 'wrong' | 'neutral'
+}
+
+// ── 分段回测（样本内/外对比）──
+export interface SplitReport {
+  code: string
+  name: string
+  strategy: string
+  train: BacktestReport
+  test: BacktestReport
+  note: string
 }

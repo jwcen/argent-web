@@ -5,6 +5,7 @@ import { useToasts } from '../lib/toast'
 import type {
   BacktestReport,
   BacktestStrategy,
+  SplitReport,
   StrategyReport,
   SignalItem,
 } from '../lib/types'
@@ -82,9 +83,13 @@ export function StrategyView() {
   const [rsiPeriod, setRsiPeriod] = useState(14)
   const [breakN, setBreakN] = useState(60)
   const [breakVol, setBreakVol] = useState(1.5)
+  const [gridN, setGridN] = useState(60)
+  const [gridLevels, setGridLevels] = useState(5)
   const [bt, setBt] = useState<BacktestReport | null>(null)
   const [btBusy, setBtBusy] = useState(false)
   const [btErr, setBtErr] = useState<string | null>(null)
+  const [split, setSplit] = useState<SplitReport | null>(null)
+  const [splitBusy, setSplitBusy] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -114,6 +119,33 @@ export function StrategyView() {
     return { total: reports.length, up, down, above }
   }, [reports])
 
+  const buildPayload = (): Record<string, unknown> => {
+    const payload: Record<string, unknown> = { code, strategy: strat }
+    if (strat === 'single_ma') payload.ma_n = maN
+    if (strat === 'ma_cross') {
+      payload.ma_fast = maFast
+      payload.ma_slow = maSlow
+    }
+    if (strat === 'bollinger') {
+      payload.boll_n = bollN
+      payload.boll_k = bollK
+    }
+    if (strat === 'rsi') {
+      payload.rsi_period = rsiPeriod
+      payload.rsi_oversold = 30
+      payload.rsi_overbought = 70
+    }
+    if (strat === 'breakout') {
+      payload.break_n = breakN
+      payload.break_vol = breakVol
+    }
+    if (strat === 'grid') {
+      payload.grid_n = gridN
+      payload.grid_levels = gridLevels
+    }
+    return payload
+  }
+
   const runBacktest = async () => {
     if (!code) {
       toast.error('请先输入股票代码')
@@ -122,31 +154,28 @@ export function StrategyView() {
     setBtBusy(true)
     setBtErr(null)
     try {
-      const payload: Record<string, unknown> = { code, strategy: strat }
-      if (strat === 'single_ma') payload.ma_n = maN
-      if (strat === 'ma_cross') {
-        payload.ma_fast = maFast
-        payload.ma_slow = maSlow
-      }
-      if (strat === 'bollinger') {
-        payload.boll_n = bollN
-        payload.boll_k = bollK
-      }
-      if (strat === 'rsi') {
-        payload.rsi_period = rsiPeriod
-        payload.rsi_oversold = 30
-        payload.rsi_overbought = 70
-      }
-      if (strat === 'breakout') {
-        payload.break_n = breakN
-        payload.break_vol = breakVol
-      }
-      const rep = await strategyApi.backtest(payload as never)
+      const rep = await strategyApi.backtest(buildPayload() as never)
       setBt(rep)
     } catch (e: unknown) {
       setBtErr((e as { message?: string })?.message || '回测失败（可能需要网络获取历史 K 线）')
     } finally {
       setBtBusy(false)
+    }
+  }
+
+  const runSplit = async () => {
+    if (!code) {
+      toast.error('请先输入股票代码')
+      return
+    }
+    setSplitBusy(true)
+    try {
+      const rep = await strategyApi.backtestSplit(buildPayload() as never)
+      setSplit(rep)
+    } catch (e: unknown) {
+      setBtErr((e as { message?: string })?.message || '分段回测失败（需 120 根以上 K 线）')
+    } finally {
+      setSplitBusy(false)
     }
   }
 
@@ -271,6 +300,7 @@ export function StrategyView() {
               <option value="rsi">RSI 择时</option>
               <option value="macd">MACD 金叉死叉</option>
               <option value="breakout">放量突破</option>
+              <option value="grid">滚动网格</option>
             </Select>
           </label>
           {strat === 'single_ma' && (
@@ -336,8 +366,23 @@ export function StrategyView() {
               </label>
             </>
           )}
+          {strat === 'grid' && (
+            <>
+              <label className="flex flex-col gap-1">
+                <span className="text-micro text-ink-faint">网格区间(日)</span>
+                <Input type="number" value={String(gridN)} onChange={(e) => setGridN(Number(e.target.value) || 60)} className="w-20" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-micro text-ink-faint">档数</span>
+                <Input type="number" value={String(gridLevels)} onChange={(e) => setGridLevels(Number(e.target.value) || 5)} className="w-20" />
+              </label>
+            </>
+          )}
           <Button onClick={runBacktest} disabled={btBusy} icon={<ChartLineUp size={16} weight="bold" />}>
             {btBusy ? '回测中…' : '运行回测'}
+          </Button>
+          <Button onClick={runSplit} disabled={splitBusy} variant="secondary" icon={<Flask size={16} weight="bold" />}>
+            {splitBusy ? '分段中…' : '分段回测'}
           </Button>
         </div>
 
@@ -384,6 +429,29 @@ export function StrategyView() {
                 </ul>
               </div>
             )}
+          </div>
+        )}
+
+        {/* 分段回测（样本内/外对比） */}
+        {split && (
+          <div className="mt-4 border-t border-line-soft pt-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-tile bg-surface-2/40 px-3 py-2.5">
+                <p className="text-micro text-ink-faint">样本内 · 超额</p>
+                <p className={`text-title-3 font-semibold tnum mt-0.5 ${split.train.excess >= 0 ? 'text-up' : 'text-down'}`}>
+                  {signed(split.train.excess)}
+                </p>
+                <p className="text-[10px] text-ink-faint tnum">年化 {signed(split.train.annualized)} · 回撤 {signed(split.train.max_dd)}</p>
+              </div>
+              <div className="rounded-tile bg-surface-2/40 px-3 py-2.5">
+                <p className="text-micro text-ink-faint">样本外 · 超额</p>
+                <p className={`text-title-3 font-semibold tnum mt-0.5 ${split.test.excess >= 0 ? 'text-up' : 'text-down'}`}>
+                  {signed(split.test.excess)}
+                </p>
+                <p className="text-[10px] text-ink-faint tnum">年化 {signed(split.test.annualized)} · 回撤 {signed(split.test.max_dd)}</p>
+              </div>
+            </div>
+            <p className="text-micro text-ink-faint mt-2">{split.note}</p>
           </div>
         )}
       </Card>

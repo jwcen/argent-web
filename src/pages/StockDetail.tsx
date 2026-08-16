@@ -4,7 +4,7 @@ import { ArrowLeft, Sparkle, TrendDown, TrendUp } from '@phosphor-icons/react'
 import { strategy } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { useToasts } from '../lib/toast'
-import type { StockAnalysis, StrategyReport, TechnicalDetail } from '../lib/types'
+import type { AnalysisRecord, StockAnalysis, StrategyReport, TechnicalDetail } from '../lib/types'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Skeleton } from '../components/ui/Skeleton'
@@ -43,6 +43,7 @@ export default function StockDetail() {
   const [report, setReport] = useState<StrategyReport | null>(null)
   const [detailErr, setDetailErr] = useState<string | null>(null)
   const [analysis, setAnalysis] = useState<StockAnalysis | null>(null)
+  const [analyses, setAnalyses] = useState<AnalysisRecord[]>([])
   const [analyzing, setAnalyzing] = useState(false)
   const [analysisErr, setAnalysisErr] = useState<string | null>(null)
 
@@ -51,6 +52,7 @@ export default function StockDetail() {
     setDetail(null)
     setReport(null)
     setAnalysis(null)
+    setAnalyses([])
     setDetailErr(null)
     setAnalysisErr(null)
     api(() => strategy.detail(code))
@@ -59,6 +61,9 @@ export default function StockDetail() {
     api(() => strategy.one(code))
       .then((r) => alive && setReport(r))
       .catch(() => alive && setReport(null))
+    api(() => strategy.analyses(code))
+      .then((r) => alive && setAnalyses(r.items))
+      .catch(() => alive && setAnalyses([]))
     return () => {
       alive = false
     }
@@ -88,6 +93,10 @@ export default function StockDetail() {
       const a = await api(() => strategy.analysis(code))
       setAnalysis(a)
       if (a.raw && !a.direction) toast.info('AI 返回了非结构化内容，已原文展示')
+      // 分析成功后刷新历史列表
+      api(() => strategy.analyses(code))
+        .then((r) => setAnalyses(r.items))
+        .catch(() => {})
     } catch (e) {
       setAnalysisErr((e as { message?: string })?.message || 'AI 分析失败')
     } finally {
@@ -207,6 +216,41 @@ export default function StockDetail() {
           <p className="mt-3 text-[11px] text-ink-faint">以上由 AI 生成，仅供研究参考，不构成投资建议。</p>
         )}
       </Card>
+
+      {/* AI 分析历史 + 后验复盘 */}
+      {analyses.length > 0 && (
+        <Card padded className="px-4 py-4">
+          <p className="text-micro font-semibold text-ink-soft mb-2">分析历史 · 后验复盘</p>
+          <ul className="divide-y divide-line-soft">
+            {analyses.map((a) => {
+              const verdict =
+                a.verdict === 'correct'
+                  ? { t: '✓ 判断正确', c: 'text-up' }
+                  : a.verdict === 'wrong'
+                    ? { t: '✗ 判断错误', c: 'text-down' }
+                    : { t: '— 中性', c: 'text-ink-faint' }
+              return (
+                <li key={a.id} className="flex items-center gap-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-caption text-ink">
+                      {(a.direction || '（无方向判断）').slice(0, 40)}
+                    </p>
+                    <p className="text-micro text-ink-faint tnum mt-0.5">
+                      {a.created_at?.slice(0, 10) || ''} · 分析时 ¥{fmtMoney(a.price_at, 2)}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className={`text-caption font-semibold ${verdict.c}`}>{verdict.t}</p>
+                    <p className={`text-micro tnum ${a.pnl_pct >= 0 ? 'text-up' : 'text-down'}`}>
+                      {a.price_at > 0 ? `${a.pnl_pct >= 0 ? '+' : ''}${(a.pnl_pct * 100).toFixed(2)}%` : '—'}
+                    </p>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </Card>
+      )}
     </div>
   )
 }

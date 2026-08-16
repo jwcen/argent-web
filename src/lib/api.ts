@@ -1,6 +1,7 @@
 import type {
   Action,
   ActionType,
+  AnalysisRecord,
   AssetType,
   Account,
   AccountSummary,
@@ -21,6 +22,7 @@ import type {
   Message,
   RealizedResult,
   Session,
+  SplitReport,
   StockAnalysis,
   StockSuggest,
   StrategyReport,
@@ -262,9 +264,14 @@ export const strategy = {
   detail: (code: string) => get<TechnicalDetail>(`/api/strategy/${code}/detail`),
   // 结构化 AI 分析（方向/建议/触发/风险）
   analysis: (code: string) => post<StockAnalysis>(`/api/strategy/${code}/analysis`),
+  // AI 分析历史 + 后验复盘（可选 code 过滤）
+  analyses: (code?: string) => get<{ items: AnalysisRecord[] }>(`/api/strategy/analyses${code ? `?code=${code}` : ''}`),
   // 对任意 A 股代码做策略回测
   backtest: (payload: { code: string; name?: string } & BacktestParams) =>
     post<BacktestReport>('/api/strategy/backtest', payload),
+  // 分段回测（样本内 vs 样本外）
+  backtestSplit: (payload: { code: string; name?: string } & BacktestParams) =>
+    post<SplitReport>('/api/strategy/backtest/split', payload),
 }
 
 // ── 截图导入（LLM 识别 → 返回草稿，确认后走 assets/portfolio 创建）──
