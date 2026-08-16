@@ -133,12 +133,13 @@ export interface DividendInput {
   note?: string
 }
 
-// ── 自选股 ──
+// ── 自选（股票 / 基金）──
 export const watchlist = {
   list: () => get<WatchlistItem[]>('/api/watchlist'),
-  add: (stock_code: string, stock_name?: string, added_price?: number | null) =>
-    post('/api/watchlist', { stock_code, stock_name, added_price }),
-  remove: (code: string) => del(`/api/watchlist/${code}`),
+  add: (item_type: 'STOCK' | 'FUND', code: string, name?: string, added_price?: number | null) =>
+    post('/api/watchlist', { item_type, code, name, added_price }),
+  remove: (item_type: 'STOCK' | 'FUND', code: string) =>
+    del(`/api/watchlist/${item_type}/${code}`),
 }
 
 // ── 券商 ──

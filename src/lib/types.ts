@@ -96,8 +96,9 @@ export interface AccountSummary {
 }
 
 export interface WatchlistItem {
-  stock_code: string
-  stock_name: string
+  item_type: 'STOCK' | 'FUND'
+  code: string
+  name: string
   added_at: string
   added_price?: number | null
 }
@@ -236,9 +237,10 @@ export interface Quote {
 // 股票搜索建议（自动补全）
 export interface StockSuggest {
   code: string // 6 位代码
-  name: string // 股票名称
+  name: string // 股票/基金名称
   pinyin?: string // 拼音首字母
-  market: string // SH / SZ / BJ
+  market: string // SH / SZ / BJ（基金为空）
+  type: 'STOCK' | 'FUND' // 区分股票 / 基金
 }
 
 export interface ApiErrorShape {

@@ -1,4 +1,4 @@
-import { ChartPieSlice, ChatCircle, Wallet } from '@phosphor-icons/react'
+import { ChartPieSlice, ChatCircle, Star, Wallet } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 
 export interface NavItem {
@@ -13,5 +13,6 @@ export interface NavItem {
 export const NAV: NavItem[] = [
   { to: '/', label: '概览', icon: ChartPieSlice, end: true },
   { to: '/portfolio', label: '持仓', icon: Wallet, end: false },
+  { to: '/watchlist', label: '自选', icon: Star, end: false },
   { to: '/ask', label: '问问', icon: ChatCircle, end: false },
 ]
