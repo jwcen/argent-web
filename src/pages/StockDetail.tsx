@@ -216,11 +216,13 @@ export default function StockDetail() {
           <Skeleton className="h-[260px] w-full rounded-tile" />
         ) : (
           <>
-            <div className="flex items-center gap-3 text-[11px] text-ink-faint mb-2 px-1">
+            <div className="flex flex-wrap items-center gap-3 text-[11px] text-ink-faint mb-2 px-1">
               <span className="flex items-center gap-1"><i className="w-3 h-[2px] rounded bg-accent inline-block" />MA5</span>
               <span className="flex items-center gap-1"><i className="w-3 h-[2px] rounded bg-[#14b8a6] inline-block" />MA10</span>
               <span className="flex items-center gap-1"><i className="w-3 h-[2px] rounded bg-[#f59e0b] inline-block" />MA20</span>
               <span className="flex items-center gap-1"><i className="w-3 h-[2px] rounded bg-[#8b5cf6] inline-block" />MA60</span>
+              <span className="flex items-center gap-1"><i className="w-3 h-[2px] rounded bg-[#ec4899] inline-block" />MA120</span>
+              <span className="flex items-center gap-1"><i className="w-3 h-[2px] rounded bg-[#f97316] inline-block" />MA250(年线)</span>
               <span className="ml-auto">布林带(20,2) 虚线</span>
             </div>
             <CandleChart
@@ -229,6 +231,8 @@ export default function StockDetail() {
               ma10={detail!.ma10}
               ma20={detail!.ma20}
               ma60={detail!.ma60}
+              ma120={detail!.ma120}
+              ma250={detail!.ma250}
               bollUp={detail!.boll_up}
               bollMid={detail!.boll_mid}
               bollLow={detail!.boll_low}

@@ -13,6 +13,8 @@ export function CandleChart({
   ma10,
   ma20,
   ma60,
+  ma120,
+  ma250,
   bollUp,
   bollMid,
   bollLow,
@@ -24,6 +26,8 @@ export function CandleChart({
   ma10: number[]
   ma20: number[]
   ma60: number[]
+  ma120: number[]
+  ma250: number[]
   bollUp: number[]
   bollMid: number[]
   bollLow: number[]
@@ -68,7 +72,7 @@ export function CandleChart({
       const k = klines[g]
       if (k && k.low < m) m = k.low
       const trackMA = (a: number[]) => { if (a[g] > 0 && a[g] < m) m = a[g] }
-      trackMA(ma5); trackMA(ma10); trackMA(ma20); trackMA(ma60)
+      trackMA(ma5); trackMA(ma10); trackMA(ma20); trackMA(ma60); trackMA(ma120); trackMA(ma250)
       if (bollUp[g] > 0 && bollUp[g] < m) m = bollUp[g]
       if (bollLow[g] > 0 && bollLow[g] < m) m = bollLow[g]
     }
@@ -80,7 +84,7 @@ export function CandleChart({
       const k = klines[g]
       if (k && k.high > m) m = k.high
       const trackMA = (a: number[]) => { if (a[g] > 0 && a[g] > m) m = a[g] }
-      trackMA(ma5); trackMA(ma10); trackMA(ma20); trackMA(ma60)
+      trackMA(ma5); trackMA(ma10); trackMA(ma20); trackMA(ma60); trackMA(ma120); trackMA(ma250)
       if (bollUp[g] > 0 && bollUp[g] > m) m = bollUp[g]
       if (bollLow[g] > 0 && bollLow[g] > m) m = bollLow[g]
     }
@@ -240,6 +244,8 @@ export function CandleChart({
         <path d={toPath(bollUp)} fill="none" stroke="var(--c-ink-soft)" strokeOpacity={0.35} strokeWidth={1} strokeDasharray="3 3" />
         <path d={toPath(bollLow)} fill="none" stroke="var(--c-ink-soft)" strokeOpacity={0.35} strokeWidth={1} strokeDasharray="3 3" />
         {/* 均线 */}
+        <path d={toPath(ma250)} fill="none" stroke="#f97316" strokeOpacity={0.9} strokeWidth={1.5} />
+        <path d={toPath(ma120)} fill="none" stroke="#ec4899" strokeOpacity={0.9} strokeWidth={1.2} />
         <path d={toPath(ma60)} fill="none" stroke="#8b5cf6" strokeOpacity={0.9} strokeWidth={1.2} />
         <path d={toPath(ma20)} fill="none" stroke="#f59e0b" strokeOpacity={0.9} strokeWidth={1.2} />
         <path d={toPath(ma10)} fill="none" stroke="#14b8a6" strokeOpacity={0.8} strokeWidth={1.1} />

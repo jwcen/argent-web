@@ -388,6 +388,8 @@ export interface TechnicalDetail {
   ma10: number[]
   ma20: number[]
   ma60: number[]
+  ma120: number[]
+  ma250: number[]
   boll_up: number[]
   boll_mid: number[]
   boll_low: number[]
