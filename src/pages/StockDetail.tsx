@@ -223,7 +223,18 @@ export default function StockDetail() {
               <span className="flex items-center gap-1"><i className="w-3 h-[2px] rounded bg-[#8b5cf6] inline-block" />MA60</span>
               <span className="ml-auto">布林带(20,2) 虚线</span>
             </div>
-            <CandleChart {...chart} />
+            <CandleChart
+              klines={detail!.klines}
+              ma5={detail!.ma5}
+              ma10={detail!.ma10}
+              ma20={detail!.ma20}
+              ma60={detail!.ma60}
+              bollUp={detail!.boll_up}
+              bollMid={detail!.boll_mid}
+              bollLow={detail!.boll_low}
+              buys={chart.buys}
+              sells={chart.sells}
+            />
             <VolumeChart
               klines={chart.klines}
               ma5={chart.volMa5}
