@@ -394,6 +394,9 @@ export interface TechnicalDetail {
   macd_dif: number[]
   macd_dea: number[]
   macd_hist: number[]
+  vol_ma5: number[]
+  vol_ma10: number[]
+  vol_ratio: number // 当日量 / 20 日均量；>1.5 放量、<0.7 缩量
   support: number
   resistance: number
   support_far: number

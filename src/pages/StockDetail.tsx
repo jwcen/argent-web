@@ -16,6 +16,7 @@ import { Button } from '../components/ui/Button'
 import { Skeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
 import { CandleChart } from '../components/charts/CandleChart'
+import { VolumeChart } from '../components/charts/VolumeChart'
 import { fmtMoney, fmtNum } from '../lib/format'
 
 // 图表最多渲染的 K 线根数（太多会糊成一团）
@@ -116,6 +117,9 @@ export default function StockDetail() {
       bollUp: slice(detail.boll_up),
       bollMid: slice(detail.boll_mid),
       bollLow: slice(detail.boll_low),
+      volMa5: slice(detail.vol_ma5),
+      volMa10: slice(detail.vol_ma10),
+      volRatio: detail.vol_ratio,
       buys: offsetMap(signalsReport?.buys),
       sells: offsetMap(signalsReport?.sells),
     }
@@ -220,6 +224,12 @@ export default function StockDetail() {
               <span className="ml-auto">布林带(20,2) 虚线</span>
             </div>
             <CandleChart {...chart} />
+            <VolumeChart
+              klines={chart.klines}
+              ma5={chart.volMa5}
+              ma10={chart.volMa10}
+              ratio={chart.volRatio}
+            />
 
             {/* 策略信号叠加控件 */}
             <div className="mt-3 flex flex-wrap items-center gap-2">
