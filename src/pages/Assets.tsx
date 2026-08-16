@@ -879,6 +879,7 @@ function ImportModal({ onClose, onImported }: { onClose: () => void; onImported:
     setImporting(true)
     let ok = 0
     let fail = 0
+    let skippedNoCode = 0
     try {
       // 基金导入前拉一次现有资产，用于「同 code → 加仓」而非重复建资产
       let existing: ExternalAsset[] = []
@@ -888,10 +889,35 @@ function ImportModal({ onClose, onImported }: { onClose: () => void; onImported:
         existing = []
       }
 
-      for (const r of records) {
+      // 截图识别常拿不到代码（App 持仓页通常不显示）。
+      // 对 code 为空但有名称的记录，用名称搜代码补全，避免建出空 code 的资产。
+      const enriched = await Promise.all(
+        records.map(async (r) => {
+          if (!r.code && r.name) {
+            try {
+              const sugg = await api(() => marketApi.stockSearch(r.name, 5))
+              if (sugg.length > 0) {
+                const norm = (s: string) => s.replace(/\s/g, '')
+                const exact = sugg.find((s) => norm(s.name) === norm(r.name))
+                const pick = exact || sugg[0]
+                return { ...r, code: pick?.code || '' }
+              }
+            } catch {
+              /* 搜不到就保留空 code，下面会跳过 */
+            }
+          }
+          return r
+        }),
+      )
+
+      for (const r of enriched) {
+        const code = r.code.trim()
+        if (!code) {
+          skippedNoCode++
+          continue
+        }
         try {
           if (r.kind === 'fund') {
-            const code = r.code.trim()
             const found = existing.find((a) => a.code === code && a.asset_type === 'FUND')
             let assetId = found?.id
             if (!assetId) {
@@ -919,7 +945,7 @@ function ImportModal({ onClose, onImported }: { onClose: () => void; onImported:
           } else {
             // stock → A 股持仓流水
             await api(() =>
-              portfolioApi.createAction(r.code.trim(), {
+              portfolioApi.createAction(code, {
                 action_type: r.action_type === 'SELL' ? 'SELL' : 'BUY',
                 price: r.price ?? r.nav ?? 0,
                 shares: Math.round(r.shares ?? 0),
@@ -936,7 +962,10 @@ function ImportModal({ onClose, onImported }: { onClose: () => void; onImported:
       setImporting(false)
     }
     if (ok > 0) {
-      toast.success(`已导入 ${ok} 条${fail > 0 ? `，${fail} 条失败` : ''}`)
+      const parts = [`已导入 ${ok} 条`]
+      if (fail > 0) parts.push(`${fail} 条失败`)
+      if (skippedNoCode > 0) parts.push(`${skippedNoCode} 条缺代码已跳过（可手填后重导）`)
+      toast.success(parts.join('，'))
       onImported()
     } else {
       toast.error(fail > 0 ? '全部导入失败，请检查字段后重试' : '没有可导入的记录')
