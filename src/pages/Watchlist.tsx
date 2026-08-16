@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { MagnifyingGlass, Star, X } from '@phosphor-icons/react'
 import { watchlist as watchApi, market } from '../lib/api'
 import { useApi } from '../lib/useApi'
@@ -22,6 +23,7 @@ const TAB_HINT: Record<Tab, string> = {
 export default function Watchlist() {
   const api = useApi()
   const toast = useToasts()
+  const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('STOCK')
   const [items, setItems] = useState<WatchlistItem[] | null>(null)
 
@@ -136,7 +138,11 @@ export default function Watchlist() {
                 : q?.change_pct
               const hasData = isFund ? !!est : !!q
               return (
-                <li key={`${i.item_type}-${i.code}`} className="flex items-center gap-3 px-5 py-3.5">
+                <li
+                  key={`${i.item_type}-${i.code}`}
+                  onClick={() => i.item_type === 'STOCK' && navigate(`/stock/${i.code}`)}
+                  className={`flex items-center gap-3 px-5 py-3.5 ${i.item_type === 'STOCK' ? 'cursor-pointer hover:bg-surface-2/40' : ''} transition-colors`}
+                >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-body font-medium">{i.name}</p>
                     <p className="mt-0.5 text-micro text-ink-faint tnum">{i.code}</p>
@@ -162,7 +168,10 @@ export default function Watchlist() {
                     </p>
                   </div>
                   <button
-                    onClick={() => remove(i)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      remove(i)
+                    }}
                     className="w-9 h-9 grid place-items-center rounded-full text-ink-faint hover:text-danger hover:bg-surface-2 transition-colors shrink-0"
                     aria-label={`移除 ${i.name}`}
                     title="移除自选"

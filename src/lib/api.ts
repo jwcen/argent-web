@@ -21,8 +21,10 @@ import type {
   Message,
   RealizedResult,
   Session,
+  StockAnalysis,
   StockSuggest,
   StrategyReport,
+  TechnicalDetail,
   User,
   WatchlistItem,
 } from './types'
@@ -250,13 +252,17 @@ export const market = {
     get<StockSuggest[]>(`/api/market/stock-search?keyword=${encodeURIComponent(keyword)}&limit=${limit}`),
 }
 
-// ── 策略栏（诚实版：中性参考 + 账本复盘）+ 回测 ──
+// ── 策略栏（诚实版：中性参考 + 账本复盘）+ 回测 + 个股详情 ──
 export const strategy = {
   // 所有 A 股持仓的策略报告（策略栏数据源）
   list: () => get<{ items: StrategyReport[] }>('/api/strategy'),
   // 单只报告
   one: (code: string) => get<StrategyReport>(`/api/strategy/${code}`),
-  // 对任意 A 股代码做均线择时回测
+  // 技术面明细（K线 + 指标序列 + 支撑压力）
+  detail: (code: string) => get<TechnicalDetail>(`/api/strategy/${code}/detail`),
+  // 结构化 AI 分析（方向/建议/触发/风险）
+  analysis: (code: string) => post<StockAnalysis>(`/api/strategy/${code}/analysis`),
+  // 对任意 A 股代码做策略回测
   backtest: (payload: { code: string; name?: string } & BacktestParams) =>
     post<BacktestReport>('/api/strategy/backtest', payload),
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, useRef, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CaretDown, ListPlus, Plus, Trash, ChartLine, ClockCounterClockwise, Info, PencilSimple, MagnifyingGlass } from '@phosphor-icons/react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { portfolio, brokers as brokerApi, accounts as accountApi, market as marketApi, ApiError } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { useQuotes } from '../lib/useQuotes'
@@ -62,6 +62,7 @@ const today = () => new Date().toISOString().slice(0, 10)
 export default function Portfolio() {
   const api = useApi()
   const toast = useToasts()
+  const navigate = useNavigate()
   const { settings, update: updateSettings } = useSettings()
 
   // A股 / 基金 / 策略 视图切换：读 URL ?view=funds|strategy
@@ -484,7 +485,7 @@ export default function Portfolio() {
                     {/* 操作：K线 / 历史 / 详情 / 编辑 + 展开箭头 */}
                     <div className="hidden sm:flex col-span-2 items-center justify-end gap-1.5">
                       <button
-                        onClick={(e) => { e.stopPropagation(); toast.info('K 线图开发中') }}
+                        onClick={(e) => { e.stopPropagation(); navigate(`/stock/${h.stock_code}`) }}
                         className="min-h-7 px-2.5 rounded-full text-[11px] font-medium border border-line text-ink-soft hover:bg-surface-2 hover:border-accent/30 hover:text-accent transition-colors"
                         title="K 线图"
                       >
@@ -498,7 +499,7 @@ export default function Portfolio() {
                         历史
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); toast.info('个股详情开发中') }}
+                        onClick={(e) => { e.stopPropagation(); navigate(`/stock/${h.stock_code}`) }}
                         className="min-h-7 px-2.5 rounded-full text-[11px] font-medium border border-line text-ink-soft hover:bg-surface-2 hover:border-accent/30 hover:text-accent transition-colors"
                         title="详情"
                       >

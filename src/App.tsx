@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Portfolio from './pages/Portfolio'
 import Watchlist from './pages/Watchlist'
+import StockDetail from './pages/StockDetail'
 import Ask from './pages/Ask'
 
 function Protected() {
@@ -29,6 +30,7 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="portfolio" element={<Portfolio />} />
         <Route path="watchlist" element={<Watchlist />} />
+        <Route path="stock/:code" element={<StockDetail />} />
         {/* 资产已并入持仓页（?view=funds），券商已移入设置抽屉，旧链接重定向 */}
         <Route path="assets" element={<Navigate to="/portfolio?view=funds" replace />} />
         <Route path="brokers" element={<Navigate to="/" replace />} />

@@ -77,6 +77,11 @@ export function StrategyView() {
   const [maN, setMaN] = useState(60)
   const [maFast, setMaFast] = useState(20)
   const [maSlow, setMaSlow] = useState(60)
+  const [bollN, setBollN] = useState(20)
+  const [bollK, setBollK] = useState(2)
+  const [rsiPeriod, setRsiPeriod] = useState(14)
+  const [breakN, setBreakN] = useState(60)
+  const [breakVol, setBreakVol] = useState(1.5)
   const [bt, setBt] = useState<BacktestReport | null>(null)
   const [btBusy, setBtBusy] = useState(false)
   const [btErr, setBtErr] = useState<string | null>(null)
@@ -122,6 +127,19 @@ export function StrategyView() {
       if (strat === 'ma_cross') {
         payload.ma_fast = maFast
         payload.ma_slow = maSlow
+      }
+      if (strat === 'bollinger') {
+        payload.boll_n = bollN
+        payload.boll_k = bollK
+      }
+      if (strat === 'rsi') {
+        payload.rsi_period = rsiPeriod
+        payload.rsi_oversold = 30
+        payload.rsi_overbought = 70
+      }
+      if (strat === 'breakout') {
+        payload.break_n = breakN
+        payload.break_vol = breakVol
       }
       const rep = await strategyApi.backtest(payload as never)
       setBt(rep)
@@ -249,6 +267,10 @@ export function StrategyView() {
               <option value="single_ma">单均线择时</option>
               <option value="ma_cross">双均线金叉</option>
               <option value="consensus">多指标共识</option>
+              <option value="bollinger">布林均值回归</option>
+              <option value="rsi">RSI 择时</option>
+              <option value="macd">MACD 金叉死叉</option>
+              <option value="breakout">放量突破</option>
             </Select>
           </label>
           {strat === 'single_ma' && (
@@ -284,6 +306,36 @@ export function StrategyView() {
               </label>
             </>
           )}
+          {strat === 'bollinger' && (
+            <>
+              <label className="flex flex-col gap-1">
+                <span className="text-micro text-ink-faint">周期</span>
+                <Input type="number" value={String(bollN)} onChange={(e) => setBollN(Number(e.target.value) || 20)} className="w-20" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-micro text-ink-faint">标准差倍数</span>
+                <Input type="number" step="0.5" value={String(bollK)} onChange={(e) => setBollK(Number(e.target.value) || 2)} className="w-20" />
+              </label>
+            </>
+          )}
+          {strat === 'rsi' && (
+            <label className="flex flex-col gap-1">
+              <span className="text-micro text-ink-faint">周期（阈值 30/70）</span>
+              <Input type="number" value={String(rsiPeriod)} onChange={(e) => setRsiPeriod(Number(e.target.value) || 14)} className="w-20" />
+            </label>
+          )}
+          {strat === 'breakout' && (
+            <>
+              <label className="flex flex-col gap-1">
+                <span className="text-micro text-ink-faint">新高周期</span>
+                <Input type="number" value={String(breakN)} onChange={(e) => setBreakN(Number(e.target.value) || 60)} className="w-20" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-micro text-ink-faint">放量倍数</span>
+                <Input type="number" step="0.5" value={String(breakVol)} onChange={(e) => setBreakVol(Number(e.target.value) || 1.5)} className="w-20" />
+              </label>
+            </>
+          )}
           <Button onClick={runBacktest} disabled={btBusy} icon={<ChartLineUp size={16} weight="bold" />}>
             {btBusy ? '回测中…' : '运行回测'}
           </Button>
@@ -293,7 +345,7 @@ export function StrategyView() {
 
         {bt && (
           <div className="mt-4 space-y-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Metric label="择时收益" value={signed(bt.total_return)} tone={bt.total_return >= 0 ? 'up' : 'down'} />
               <Metric label="持有收益" value={signed(bt.hold_return)} tone={bt.hold_return >= 0 ? 'up' : 'down'} />
               <Metric
@@ -305,11 +357,33 @@ export function StrategyView() {
               <Metric label="最大回撤" value={signed(bt.max_dd)} tone="down" />
               <Metric label="交易胜率" value={pct(bt.win_rate, 0)} />
               <Metric label="在场比例" value={pct(bt.time_in_market, 0)} />
+              <Metric label="年化收益" value={signed(bt.annualized)} tone={bt.annualized >= 0 ? 'up' : 'down'} />
+              <Metric label="夏普比率" value={bt.sharpe ? bt.sharpe.toFixed(2) : '—'} />
             </div>
             <div className="text-ink-soft">
               <EquityChart timing={bt.curve_timing} hold={bt.curve_hold} />
               <p className="text-micro text-ink-faint mt-1">{bt.note}</p>
             </div>
+            {/* 交易明细：每笔开仓→平仓的收益 */}
+            {bt.trades_detail && bt.trades_detail.length > 0 && (
+              <div className="mt-3">
+                <p className="text-micro font-semibold text-ink-soft mb-1.5">
+                  交易明细（{bt.trades_detail.length} 笔）
+                </p>
+                <ul className="max-h-44 overflow-auto divide-y divide-line-soft text-caption">
+                  {bt.trades_detail.map((td, i) => (
+                    <li key={i} className="flex items-center gap-3 py-1.5">
+                      <span className="text-ink-faint tnum shrink-0">
+                        #{i + 1} 第 {td.open_idx}-{td.close_idx} 段
+                      </span>
+                      <span className={`ml-auto font-semibold tnum ${td.return >= 0 ? 'text-up' : 'text-down'}`}>
+                        {signed(td.return)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </Card>

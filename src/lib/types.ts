@@ -316,13 +316,35 @@ export interface StrategyReport {
   disclaimer: string
 }
 
-export type BacktestStrategy = 'single_ma' | 'ma_cross' | 'consensus'
+export type BacktestStrategy =
+  | 'single_ma'
+  | 'ma_cross'
+  | 'consensus'
+  | 'bollinger'
+  | 'rsi'
+  | 'macd'
+  | 'breakout'
 
 export interface BacktestParams {
   strategy: BacktestStrategy
   ma_n?: number
   ma_fast?: number
   ma_slow?: number
+  boll_n?: number
+  boll_k?: number
+  rsi_period?: number
+  rsi_oversold?: number
+  rsi_overbought?: number
+  break_n?: number
+  break_vol?: number
+}
+
+export interface TradeDetail {
+  open_idx: number
+  close_idx: number
+  open_equity: number
+  close_equity: number
+  return: number
 }
 
 export interface BacktestReport {
@@ -336,7 +358,52 @@ export interface BacktestReport {
   win_rate: number
   trades: number
   time_in_market: number
+  annualized: number
+  sharpe: number
   curve_timing: number[]
   curve_hold: number[]
+  trades_detail: TradeDetail[]
   note: string
+}
+
+// ── 个股技术面明细（详情页）──
+export interface KlineBar {
+  date: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+export interface TechnicalDetail {
+  code: string
+  name: string
+  last_close: number
+  klines: KlineBar[]
+  ma5: number[]
+  ma10: number[]
+  ma20: number[]
+  ma60: number[]
+  boll_up: number[]
+  boll_mid: number[]
+  boll_low: number[]
+  macd_dif: number[]
+  macd_dea: number[]
+  macd_hist: number[]
+  support: number
+  resistance: number
+  support_far: number
+  resistance_far: number
+}
+
+// ── 结构化 AI 个股分析（咨询）──
+export interface StockAnalysis {
+  code: string
+  name: string
+  direction: string
+  advice: string
+  trigger: string
+  risk: string
+  raw?: string
 }
