@@ -183,6 +183,16 @@ export interface FundQuote {
   change_pct: number
 }
 
+// 基金盘中估值（来自东财 Fund_JJJZ_Data，9:30-15:00 实时；非交易时段 estimate_nav=0）
+export interface FundEstimate {
+  code: string
+  name: string
+  unit_nav: number           // 官方单位净值
+  daily_change_pct: number   // 官方净值日增长率 %
+  estimate_nav: number       // 盘中估算净值，非交易时段为 0
+  estimate_change_pct: number// 盘中估算增长率 %
+}
+
 // ── 截图导入：LLM 识别出的记录草稿 ──
 export interface ImportRecord {
   kind: 'fund' | 'stock'

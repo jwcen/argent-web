@@ -12,6 +12,7 @@ import type {
   DividendEvent,
   ExternalAction,
   ExternalAsset,
+  FundEstimate,
   FundQuote,
   Holding,
   ImportRecord,
@@ -241,6 +242,9 @@ export const market = {
     get<Quote[]>(`/api/market/quote?codes=${codes.join(',')}`),
   funds: (codes: string[]) =>
     get<FundQuote[]>(`/api/market/funds?codes=${codes.join(',')}`),
+  // 基金盘中估值（盘内 estimate_nav>0，盘外回落官方净值）
+  fundsEstimate: (codes: string[]) =>
+    get<FundEstimate[]>(`/api/market/funds-estimate?codes=${codes.join(',')}`),
   // 股票代码/名称模糊搜索（自动补全）
   stockSearch: (keyword: string, limit = 10) =>
     get<StockSuggest[]>(`/api/market/stock-search?keyword=${encodeURIComponent(keyword)}&limit=${limit}`),

@@ -4,7 +4,7 @@ import { watchlist as watchApi, market } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { useQuotes } from '../lib/useQuotes'
 import { useToasts } from '../lib/toast'
-import type { FundQuote, StockSuggest, WatchlistItem } from '../lib/types'
+import type { FundEstimate, StockSuggest, WatchlistItem } from '../lib/types'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -37,22 +37,27 @@ export default function Watchlist() {
   // 当前 tab 下的自选项
   const list = useMemo(() => (items ?? []).filter((i) => i.item_type === tab), [items, tab])
 
-  // 行情：股票走批量报价，基金走净值接口
+  // 行情：股票走批量报价（useQuotes 自带刷新），基金走盘中估值（盘内实时，盘外回落官方净值）
   const codes = useMemo(() => list.map((i) => i.code), [list])
   const quotes = useQuotes(tab === 'STOCK' ? codes : [])
-  const [fundNavs, setFundNavs] = useState<Record<string, FundQuote>>({})
+  const [fundEsts, setFundEsts] = useState<Record<string, FundEstimate>>({})
   useEffect(() => {
     if (tab !== 'FUND' || codes.length === 0) {
-      setFundNavs({})
+      setFundEsts({})
       return
     }
-    api(() => market.funds(codes))
-      .then((fs) => {
-        const m: Record<string, FundQuote> = {}
-        for (const f of fs) m[f.code] = f
-        setFundNavs(m)
-      })
-      .catch(() => setFundNavs({}))
+    const refresh = () =>
+      api(() => market.fundsEstimate(codes))
+        .then((fs) => {
+          const m: Record<string, FundEstimate> = {}
+          for (const f of fs) m[f.code] = f
+          setFundEsts(m)
+        })
+        .catch(() => setFundEsts({}))
+    refresh()
+    // 后端 60s 缓存，前端 60s 刷新一次就够（盘中估值每分钟更新）
+    const t = setInterval(refresh, 60_000)
+    return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, codes.join(','), api])
 
@@ -119,22 +124,41 @@ export default function Watchlist() {
           <ul className="divide-y divide-line-soft">
             {list.map((i) => {
               const q = quotes[i.code]
-              const nav = fundNavs[i.code]
-              const price = tab === 'STOCK' ? q?.price : nav?.unit_nav
-              const pct = tab === 'STOCK' ? q?.change_pct : nav?.change_pct
-              const hasQuote = tab === 'STOCK' ? !!q : !!nav
+              const est = fundEsts[i.code]
+              // 基金：盘内用估值，盘外回落官方净值
+              const isFund = tab === 'FUND'
+              const hasEst = isFund && !!est && est.estimate_nav > 0
+              const price = isFund ? (hasEst ? est!.estimate_nav : est?.unit_nav) : q?.price
+              const pct = isFund
+                ? hasEst
+                  ? est!.estimate_change_pct
+                  : est?.daily_change_pct
+                : q?.change_pct
+              const hasData = isFund ? !!est : !!q
               return (
                 <li key={`${i.item_type}-${i.code}`} className="flex items-center gap-3 px-5 py-3.5">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-body font-medium">{i.name}</p>
                     <p className="mt-0.5 text-micro text-ink-faint tnum">{i.code}</p>
                   </div>
-                  <div className="text-right shrink-0">
+                  <div className="text-right shrink-0 max-w-[55%]">
                     <p className="text-body font-semibold tnum">
-                      {hasQuote ? fmtMoney(price, tab === 'FUND' ? 4 : 2) : '—'}
+                      {hasData ? fmtMoney(price, isFund ? 4 : 2) : '—'}
                     </p>
                     <p className={`mt-0.5 text-micro tnum font-medium ${pnlClass(pct)}`}>
-                      {hasQuote ? fmtPct(pct) : '暂无行情'}
+                      {hasData
+                        ? fmtPct(pct)
+                        : '暂无行情'}
+                    </p>
+                    {/* 第三行：参考价 / 已闭市 / 日内范围 */}
+                    <p className="mt-0.5 text-[11px] text-ink-faint tnum truncate">
+                      {isFund
+                        ? hasEst
+                          ? `净值 ${est!.unit_nav.toFixed(4)}`
+                          : '已闭市'
+                        : q
+                          ? `昨收 ${fmtMoney(q.prev_close, 2)} · 高 ${fmtMoney(q.high, 2)} · 低 ${fmtMoney(q.low, 2)}`
+                          : '—'}
                     </p>
                   </div>
                   <button
