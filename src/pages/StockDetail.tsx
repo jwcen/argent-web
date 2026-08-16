@@ -4,16 +4,36 @@ import { ArrowLeft, Sparkle, TrendDown, TrendUp } from '@phosphor-icons/react'
 import { strategy } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { useToasts } from '../lib/toast'
-import type { AnalysisRecord, StockAnalysis, StrategyReport, TechnicalDetail } from '../lib/types'
+import type {
+  AnalysisRecord,
+  BacktestStrategy,
+  StockAnalysis,
+  StrategyReport,
+  TechnicalDetail,
+} from '../lib/types'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Skeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
 import { CandleChart } from '../components/charts/CandleChart'
-import { fmtMoney } from '../lib/format'
+import { fmtMoney, fmtNum } from '../lib/format'
 
 // 图表最多渲染的 K 线根数（太多会糊成一团）
 const CHART_N = 120
+
+const PERIOD_LABEL: Record<number, string> = { 0: '日K', 102: '周K', 103: '月K' }
+
+const SIGNAL_OPTIONS: { value: BacktestStrategy | ''; label: string }[] = [
+  { value: '', label: '不叠加信号' },
+  { value: 'single_ma', label: '单均线择时 (MA60)' },
+  { value: 'ma_cross', label: '双均线金叉 (20/60)' },
+  { value: 'consensus', label: '多指标共识' },
+  { value: 'bollinger', label: '布林均值回归' },
+  { value: 'rsi', label: 'RSI 择时' },
+  { value: 'macd', label: 'MACD 金叉死叉' },
+  { value: 'breakout', label: '放量突破' },
+  { value: 'grid', label: '滚动网格' },
+]
 
 function TrendPill({ trend }: { trend: StrategyReport['trend'] }) {
   if (trend === 'up')
@@ -39,6 +59,16 @@ export default function StockDetail() {
   const api = useApi()
   const toast = useToasts()
 
+  const [period, setPeriod] = useState<number>(0) // 0=日K, 102=周K, 103=月K
+  const [signal, setSignal] = useState<BacktestStrategy | ''>('')
+  const [signalsReport, setSignalsReport] = useState<{
+    buys: number[]
+    sells: number[]
+    strategy: string
+    excess: number
+  } | null>(null)
+  const [signalBusy, setSignalBusy] = useState(false)
+
   const [detail, setDetail] = useState<TechnicalDetail | null>(null)
   const [report, setReport] = useState<StrategyReport | null>(null)
   const [detailErr, setDetailErr] = useState<string | null>(null)
@@ -53,9 +83,10 @@ export default function StockDetail() {
     setReport(null)
     setAnalysis(null)
     setAnalyses([])
+    setSignalsReport(null)
     setDetailErr(null)
     setAnalysisErr(null)
-    api(() => strategy.detail(code))
+    api(() => strategy.detail(code, { period }))
       .then((d) => alive && setDetail(d))
       .catch((e) => alive && setDetailErr(e?.message || '加载技术面失败'))
     api(() => strategy.one(code))
@@ -67,13 +98,15 @@ export default function StockDetail() {
     return () => {
       alive = false
     }
-  }, [code, api])
+  }, [code, period, api])
 
-  // 图表只取最近 CHART_N 根
+  // 图表只取最近 CHART_N 根，并把买卖信号索引同步切到画图区段
   const chart = useMemo(() => {
     if (!detail || detail.klines.length === 0) return null
     const start = Math.max(0, detail.klines.length - CHART_N)
     const slice = <T,>(a: T[]) => a.slice(start)
+    const offsetMap = (idxs: number[] | undefined) =>
+      (idxs ?? []).map((i) => i - start).filter((i) => i >= 0 && i < CHART_N)
     return {
       klines: slice(detail.klines),
       ma5: slice(detail.ma5),
@@ -83,8 +116,35 @@ export default function StockDetail() {
       bollUp: slice(detail.boll_up),
       bollMid: slice(detail.boll_mid),
       bollLow: slice(detail.boll_low),
+      buys: offsetMap(signalsReport?.buys),
+      sells: offsetMap(signalsReport?.sells),
     }
-  }, [detail])
+  }, [detail, signalsReport])
+
+  const runSignal = useCallback(async () => {
+    if (!signal) {
+      setSignalsReport(null)
+      return
+    }
+    setSignalBusy(true)
+    try {
+      const rep = await strategy.backtest({
+        code,
+        strategy: signal,
+        period,
+      } as never)
+      setSignalsReport({
+        buys: rep.trades_detail.map((t: { open_idx: number }) => t.open_idx),
+        sells: rep.trades_detail.map((t: { close_idx: number }) => t.close_idx),
+        strategy: rep.strategy,
+        excess: rep.excess,
+      })
+    } catch (e) {
+      toast.error(((e as { message?: string })?.message || '加载信号失败') + '（需网络 K 线）')
+    } finally {
+      setSignalBusy(false)
+    }
+  }, [code, signal, period, toast])
 
   const runAnalysis = useCallback(async () => {
     setAnalyzing(true)
@@ -127,8 +187,25 @@ export default function StockDetail() {
         {report && <TrendPill trend={report.trend} />}
       </div>
 
-      {/* K 线图 */}
+      {/* K 线图 + 周期切换 + 策略信号叠加 */}
       <Card padded className="px-3 sm:px-4 py-4">
+        {/* 周期切换 */}
+        <div className="flex items-center gap-1 mb-3">
+          <span className="text-micro text-ink-faint mr-1">周期</span>
+          {[0, 102, 103].map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              aria-pressed={period === p}
+              className={`min-h-8 px-3 text-caption font-semibold rounded-full transition-colors ${
+                period === p ? 'bg-accent text-white' : 'bg-surface-2 text-ink-soft hover:bg-surface-2/80'
+              }`}
+            >
+              {PERIOD_LABEL[p]}
+            </button>
+          ))}
+        </div>
+
         {detailErr ? (
           <EmptyState compact title="技术面加载失败" description={detailErr} />
         ) : !chart ? (
@@ -143,6 +220,38 @@ export default function StockDetail() {
               <span className="ml-auto">布林带(20,2) 虚线</span>
             </div>
             <CandleChart {...chart} />
+
+            {/* 策略信号叠加控件 */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <select
+                value={signal}
+                onChange={(e) => setSignal(e.target.value as BacktestStrategy | '')}
+                className="h-9 rounded-tile border border-line bg-surface px-3 text-caption text-ink outline-none focus:border-accent"
+              >
+                {SIGNAL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={runSignal}
+                disabled={!signal || signalBusy}
+                loading={signalBusy}
+              >
+                {signalBusy ? '加载中…' : signal ? '叠加信号' : '请先选策略'}
+              </Button>
+              {signalsReport && (
+                <span className="text-micro text-ink-soft tnum">
+                  {signalsReport.strategy} · 超额
+                  <b className={`ml-0.5 ${signalsReport.excess >= 0 ? 'text-up' : 'text-down'}`}>
+                    {fmtNum(signalsReport.excess * 100, 2)}%
+                  </b>
+                </span>
+              )}
+              <span className="text-[11px] text-ink-faint ml-auto">买↑ 红 / 卖↓ 绿 · 仅供参考</span>
+            </div>
+
             {/* 支撑压力 */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
               <Level label="近端支撑" v={detail!.support} tone="down" />

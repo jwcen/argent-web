@@ -261,7 +261,8 @@ export const strategy = {
   // 单只报告
   one: (code: string) => get<StrategyReport>(`/api/strategy/${code}`),
   // 技术面明细（K线 + 指标序列 + 支撑压力）
-  detail: (code: string) => get<TechnicalDetail>(`/api/strategy/${code}/detail`),
+  detail: (code: string, opts?: { period?: number }) =>
+    get<TechnicalDetail>(`/api/strategy/${code}/detail${opts?.period ? `?period=${opts.period}` : ''}`),
   // 结构化 AI 分析（方向/建议/触发/风险）
   analysis: (code: string) => post<StockAnalysis>(`/api/strategy/${code}/analysis`),
   // AI 分析历史 + 后验复盘（可选 code 过滤）
