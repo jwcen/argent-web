@@ -259,7 +259,7 @@ export default function StockDetail() {
                   </b>
                 </span>
               )}
-              <span className="text-[11px] text-ink-faint ml-auto">买↑ 红 / 卖↓ 绿 · 仅供参考</span>
+              <span className="text-[11px] text-ink-faint ml-auto">买(红) / 卖(绿) · 仅供参考</span>
             </div>
 
             {/* 支撑压力 */}

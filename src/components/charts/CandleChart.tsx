@@ -110,35 +110,29 @@ export function CandleChart({
         )
       })}
 
-      {/* 买卖信号箭头 */}
+      {/* 买卖信号：汉字标注 */}
       {(buys || []).map((i) => {
         if (i < 0 || i >= n) return null
         const cx = x(i)
         const yLow = y(klines[i].low)
-        // 买↑：放在蜡烛下方（红 up 配色）
-        const ay = Math.min(yLow + 12, H - padB + 12)
+        // 买：放在蜡烛下方（红 up 配色）
+        const ay = Math.min(yLow + 14, H - padB + 14)
         return (
-          <g key={`b${i}`}>
-            <polygon
-              points={`${cx},${ay} ${cx - 4},${ay + 6} ${cx + 4},${ay + 6}`}
-              fill="var(--c-up)"
-            />
-          </g>
+          <text key={`b${i}`} x={cx} y={ay} textAnchor="middle" fill="var(--c-up)" fontSize={11} fontWeight={700}>
+            买
+          </text>
         )
       })}
       {(sells || []).map((i) => {
         if (i < 0 || i >= n) return null
         const cx = x(i)
         const yHigh = y(klines[i].high)
-        // 卖↓：放在蜡烛上方（绿 down 配色）
-        const ay = Math.max(yHigh - 12, padT - 12)
+        // 卖：放在蜡烛上方（绿 down 配色）
+        const ay = Math.max(yHigh - 12, padT + 4)
         return (
-          <g key={`s${i}`}>
-            <polygon
-              points={`${cx},${ay} ${cx - 4},${ay - 6} ${cx + 4},${ay - 6}`}
-              fill="var(--c-down)"
-            />
-          </g>
+          <text key={`s${i}`} x={cx} y={ay} textAnchor="middle" fill="var(--c-down)" fontSize={11} fontWeight={700}>
+            卖
+          </text>
         )
       })}
 
