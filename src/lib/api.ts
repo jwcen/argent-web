@@ -268,7 +268,8 @@ export const strategy = {
   // AI 分析历史 + 后验复盘（可选 code 过滤）
   analyses: (code?: string) => get<{ items: AnalysisRecord[] }>(`/api/strategy/analyses${code ? `?code=${code}` : ''}`),
   // 对任意 A 股代码做策略回测
-  backtest: (payload: { code: string; name?: string } & BacktestParams) =>
+  // klines 可选：传前端已持有的 detail.klines，让回测与图形同源同窗口（信号位置确定、不漂移）。
+  backtest: (payload: { code: string; name?: string } & BacktestParams & { klines?: KlineBar[] }) =>
     post<BacktestReport>('/api/strategy/backtest', payload),
   // 分段回测（样本内 vs 样本外）
   backtestSplit: (payload: { code: string; name?: string } & BacktestParams) =>

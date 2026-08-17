@@ -16,11 +16,9 @@ import { Button } from '../components/ui/Button'
 import { Skeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
 import { CandleChart } from '../components/charts/CandleChart'
-import { VolumeChart } from '../components/charts/VolumeChart'
 import { fmtMoney, fmtNum } from '../lib/format'
 
-// 图表最多渲染的 K 线根数（太多会糊成一团）
-const CHART_N = 120
+// 默认可见根数由 CandleChart 内部 DEFAULT_VIEW 控制；完整 klines 交给组件，用户可滑动/缩放看历史。
 
 const PERIOD_LABEL: Record<number, string> = { 0: '日K', 102: '周K', 103: '月K' }
 
@@ -101,27 +99,30 @@ export default function StockDetail() {
     }
   }, [code, period, api])
 
-  // 图表只取最近 CHART_N 根，并把买卖信号索引同步切到画图区段
+  // 图表传完整 klines 给 CandleChart（由组件内部 view 控制可见窗口）。
+  // 买卖信号 buys/sells 是回测返回的「相对完整 klines 下标」，不再偏移——
+  // 必须与传入 CandleChart 的 klines 同源同窗口，信号才画在正确时间位置。
   const chart = useMemo(() => {
     if (!detail || detail.klines.length === 0) return null
-    const start = Math.max(0, detail.klines.length - CHART_N)
-    const slice = <T,>(a: T[]) => a.slice(start)
-    const offsetMap = (idxs: number[] | undefined) =>
-      (idxs ?? []).map((i) => i - start).filter((i) => i >= 0 && i < CHART_N)
+    const n = detail.klines.length
+    const inRange = (idxs: number[] | undefined) =>
+      (idxs ?? []).filter((i) => i >= 0 && i < n)
     return {
-      klines: slice(detail.klines),
-      ma5: slice(detail.ma5),
-      ma10: slice(detail.ma10),
-      ma20: slice(detail.ma20),
-      ma60: slice(detail.ma60),
-      bollUp: slice(detail.boll_up),
-      bollMid: slice(detail.boll_mid),
-      bollLow: slice(detail.boll_low),
-      volMa5: slice(detail.vol_ma5),
-      volMa10: slice(detail.vol_ma10),
+      klines: detail.klines,
+      ma5: detail.ma5,
+      ma10: detail.ma10,
+      ma20: detail.ma20,
+      ma60: detail.ma60,
+      ma120: detail.ma120,
+      ma250: detail.ma250,
+      bollUp: detail.boll_up,
+      bollMid: detail.boll_mid,
+      bollLow: detail.boll_low,
+      volMa5: detail.vol_ma5,
+      volMa10: detail.vol_ma10,
       volRatio: detail.vol_ratio,
-      buys: offsetMap(signalsReport?.buys),
-      sells: offsetMap(signalsReport?.sells),
+      buys: inRange(signalsReport?.buys),
+      sells: inRange(signalsReport?.sells),
     }
   }, [detail, signalsReport])
 
@@ -136,6 +137,7 @@ export default function StockDetail() {
         code,
         strategy: signal,
         period,
+        klines: detail?.klines,
       } as never)
       setSignalsReport({
         buys: rep.trades_detail.map((t: { open_idx: number }) => t.open_idx),
@@ -226,24 +228,21 @@ export default function StockDetail() {
               <span className="ml-auto">布林带(20,2) 虚线</span>
             </div>
             <CandleChart
-              klines={detail!.klines}
-              ma5={detail!.ma5}
-              ma10={detail!.ma10}
-              ma20={detail!.ma20}
-              ma60={detail!.ma60}
-              ma120={detail!.ma120}
-              ma250={detail!.ma250}
-              bollUp={detail!.boll_up}
-              bollMid={detail!.boll_mid}
-              bollLow={detail!.boll_low}
+              klines={chart.klines}
+              ma5={chart.ma5}
+              ma10={chart.ma10}
+              ma20={chart.ma20}
+              ma60={chart.ma60}
+              ma120={chart.ma120}
+              ma250={chart.ma250}
+              bollUp={chart.bollUp}
+              bollMid={chart.bollMid}
+              bollLow={chart.bollLow}
+              volMa5={chart.volMa5}
+              volMa10={chart.volMa10}
+              volRatio={chart.volRatio}
               buys={chart.buys}
               sells={chart.sells}
-            />
-            <VolumeChart
-              klines={chart.klines}
-              ma5={chart.volMa5}
-              ma10={chart.volMa10}
-              ratio={chart.volRatio}
             />
 
             {/* 策略信号叠加控件 */}
