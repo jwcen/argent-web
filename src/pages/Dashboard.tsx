@@ -227,11 +227,14 @@ export default function Dashboard() {
 
   // 净值曲线：TWR（起点 100）作主区，沪深300 基准作对比线（同为 100 起点可直接比）
   const twrPoints = useMemo<TrendPoint[]>(
-    () => (curve ? curve.dates.map((d, i) => ({ label: d, value: curve.twr[i] })) : []),
+    () => (curve?.dates ? curve.dates.map((d, i) => ({ label: d, value: curve.twr[i] })) : []),
     [curve],
   )
   const benchPoints = useMemo<TrendPoint[]>(
-    () => (curve && curve.bench ? curve.dates.map((d, i) => ({ label: d, value: curve.bench![i] })) : []),
+    () =>
+      curve?.dates && curve.bench
+        ? curve.dates.map((d, i) => ({ label: d, value: curve.bench![i] }))
+        : [],
     [curve],
   )
 
